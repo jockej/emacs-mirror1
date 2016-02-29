@@ -40,7 +40,8 @@ bidi.o: bidi.c buffer.h character.h dispextern.h msdos.h lisp.h \
    globals.h $(config_h)
 buffer.o: buffer.c buffer.h region-cache.h commands.h window.h \
    $(INTERVALS_H) blockinput.h atimer.h systime.h character.h ../lib/unistd.h \
-   indent.h keyboard.h coding.h keymap.h frame.h lisp.h globals.h $(config_h)
+   indent.h keyboard.h coding.h keymap.h frame.h lisp.h globals.h \
+   $(config_h) overlays.h
 callint.o: callint.c window.h commands.h buffer.h keymap.h globals.h msdos.h \
    keyboard.h dispextern.h systime.h coding.h composite.h lisp.h \
    character.h $(config_h)
@@ -271,7 +272,9 @@ xsettings.o: xterm.h xsettings.h lisp.h frame.h termhooks.h $(config_h) \
 ## The files of Lisp proper.
 alloc.o: alloc.c process.h frame.h window.h buffer.h  puresize.h syssignal.h \
    keyboard.h blockinput.h atimer.h systime.h character.h lisp.h $(config_h) \
-   $(INTERVALS_H) termhooks.h gnutls.h coding.h ../lib/unistd.h globals.h
+   $(INTERVALS_H) termhooks.h gnutls.h coding.h ../lib/unistd.h \
+   globals.h overlays.h
+
 bytecode.o: bytecode.c buffer.h syntax.h character.h window.h dispextern.h \
   lisp.h globals.h $(config_h) msdos.h
 data.o: data.c buffer.h puresize.h character.h syssignal.h keyboard.h frame.h \
@@ -302,5 +305,7 @@ intervals.o: intervals.c buffer.h $(INTERVALS_H) keyboard.h puresize.h \
 textprop.o: textprop.c buffer.h window.h $(INTERVALS_H) \
    lisp.h globals.h $(config_h)
 
+## Overlays
+overlays.o: overlays.c overlays.h lisp.h
 
 ### deps.mk ends here

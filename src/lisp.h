@@ -2106,6 +2106,24 @@ struct Lisp_Overlay
     Lisp_Object start;
     Lisp_Object end;
     Lisp_Object plist;
+
+    /* For the tree structure */
+    /* The interval */
+    ptrdiff_t char_start;
+    ptrdiff_t char_end;
+    ptrdiff_t byte_start;
+    ptrdiff_t byte_end;
+    /* Left child */
+    struct Lisp_Overlay *left;
+    /* Right child */
+    struct Lisp_Overlay *right;
+    /* Level */
+    unsigned level;
+    /* Max value of any interval endpoint in the subtree rooted at
+       this node, use the char* values for this */
+    ptrdiff_t max;
+    /* buffer this overlay belongs to */
+    struct buffer *buffer;
   };
 
 /* Types of data which may be saved in a Lisp_Save_Value.  */

@@ -41,6 +41,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "frame.h"
 #include "blockinput.h"
 #include "termhooks.h"		/* For struct terminal.  */
+#include "overlays.h"
 #ifdef HAVE_WINDOW_SYSTEM
 #include TERM_HEADER
 #endif /* HAVE_WINDOW_SYSTEM */
@@ -3785,6 +3786,18 @@ build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object plist)
   OVERLAY_END (overlay) = end;
   set_overlay_plist (overlay, plist);
   XOVERLAY (overlay)->next = NULL;
+
+  /* For the tree */
+  XOVERLAY (overlay)->right = overlay_sentinel;
+  XOVERLAY (overlay)->left = overlay_sentinel;
+  XOVERLAY (overlay)->level = 0;
+  XOVERLAY (overlay)->max = 0;
+  XOVERLAY (overlay)->char_start = XMARKER(start)->charpos;
+  XOVERLAY (overlay)->byte_start = XMARKER(start)->bytepos;
+  XOVERLAY (overlay)->char_end = XMARKER(end)->charpos;
+  XOVERLAY (overlay)->byte_end = XMARKER(end)->bytepos;
+  XOVERLAY (overlay)->buffer = XMARKER(start)->buffer;
+
   return overlay;
 }
 

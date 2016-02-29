@@ -3851,6 +3851,9 @@ for the rear of the overlay advance when text is inserted there
   /* This puts it in the right list, and in the right order.  */
   recenter_overlay_lists (b, b->overlay_center);
 
+  /* Insert this overlay into the buffer's overlay tree */
+  b->overlay_tree = overlay_insert (b->overlay_tree, overlay);
+
   /* We don't need to redisplay the region covered by the overlay, because
      the overlay has no properties at the moment.  */
 

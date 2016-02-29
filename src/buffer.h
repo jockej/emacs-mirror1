@@ -873,6 +873,9 @@ struct buffer
   /* Position where the overlay lists are centered.  */
   ptrdiff_t overlay_center;
 
+  /* Root of the overlay tree */
+  struct Lisp_Overlay *overlay_tree;
+
   /* Changes in the buffer are recorded here for undo, and t means
      don't record anything.  This information belongs to the base
      buffer of an indirect buffer.  But we can't store it in the
