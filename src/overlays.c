@@ -15,45 +15,87 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+
 #include "overlays.h"
 
 const struct Lisp_Overlay sentinel;
 
 const struct Lisp_Overlay *overlay_sentinel;
 
-static struct Lisp_Overlay *overlay_split(struct Lisp_Overlay * root)
+static struct Lisp_Overlay *
+overlay_split(struct Lisp_Overlay * root)
 {
-  struct Lisp_Overlay *right = XOVERLAY (root)->right;
-  struct Lisp_Overlay *rightright = XOVERLAY (right)->right;
-  if (XOVERLAY (root)->level != 0 &&
-      XOVERLAY (rightright)->level == XOVERLAY (root)->level)
+  struct Lisp_Overlay *right = root->right;
+  struct Lisp_Overlay *rightright = right->right;
+  if (root->level != 0 &&
+      right->right->level == root->level)
     {
       struct Lisp_Overlay *tmp = root;
       root = right;
-      XOVERLAY (tmp)->right = XOVERLAY (root)->left;
-      XOVERLAY (root)->left = tmp;
-      ++XOVERLAY (root)->level;
-      XOVERLAY (root)->left = overlay_split (XOVERLAY (root)->right);
+      tmp->right = root->left;
+      root->left = tmp;
+      ++root->level;
+      root->left = overlay_split (root->right);
     }
 
   return root;
 }
 
-static struct Lisp_Overlay *overlay_skew(struct Lisp_Overlay * root)
+static struct Lisp_Overlay *
+overlay_skew(struct Lisp_Overlay * root)
 {
   /* If we've reach the leaves */
-  if (XOVERLAY (root)->level == 0)
+  if (root->level == 0)
     return root;
 
-  struct Lisp_Overlay *left = XOVERLAY (root)->left;
+  struct Lisp_Overlay *left = root->left;
   /* If we have a left horizontal link */
-  if (XOVERLAY (left)->level == XOVERLAY (root)->level)
+  if (left->level == root->level)
     {
       struct Lisp_Overlay *tmp = root;
       root = left;
-      XOVERLAY (tmp)->left = XOVERLAY (root)->right;
-      XOVERLAY (root)->right = tmp;
+      tmp->left = root->right;
+      root->right = tmp;
     }
-  XOVERLAY (root)->right = overlay_skew (XOVERLAY (root)->right);
+  root->right = overlay_skew (root->right);
   return root;
+}
+
+struct Lisp_Overlay *
+overlay_insert(struct Lisp_Overlay *root, struct Lisp_Overlay *elm)
+{
+  if (root == overlay_sentinel)
+    {
+      root = elm;
+      elm->level = 1;
+    }
+  else
+    {
+      if (elm->char_start < root->char_start)
+        root->left = overlay_insert(root->left, elm);
+      else
+        root->right = overlay_insert(root->right, elm);
+      root = overlay_skew(root);
+      root = overlay_split(root);
+    }
+  return root;
+}
+
+struct Lisp_Overlay *
+overlay_delete(struct Lisp_Overlay *root, struct Lisp_Overlay *elm)
+{
+  static struct Lisp_Overlay *replacee, *replacer;
+
+  /* Search all the way down the tree */
+  if (root != overlay_sentinel)
+    {
+      replacer = root;
+      if (root->char_start < elm->char_start)
+        root->right = overlay_delete(root->right, elm);
+      else
+        {
+          replacee = root;
+          root->left = overlay_delete(root->left, elm);
+        }
+    }
 }

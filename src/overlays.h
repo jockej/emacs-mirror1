@@ -1,5 +1,3 @@
-#ifndef OVERLAYS_H
-#define OVERLAYS_H
 /*
  * Copyright (C) 2016  Joakim Jalap
  *
@@ -17,15 +15,18 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/* #include "lisp.h"               /\* For the Lisp_Overlay type *\/ */
+#ifndef EMACS_OVERLAYS_H
+#define EMACS_OVERLAYS_H
 
+#include <config.h>
+#include "lisp.h"
 
 extern const struct Lisp_Overlay *overlay_sentinel;
 
-struct Lisp_Overlay *overlay_insert(struct Lisp_Overlay *root,
-                                    struct Lisp_Overlay *node);
+struct Lisp_Overlay *
+overlay_insert(struct Lisp_Overlay *root, struct Lisp_Overlay *node);
 
-struct Lisp_Overlay *overlay_delete(struct Lisp_Overlay *root,
-                                    struct Lisp_Overlay *node);
+struct Lisp_Overlay *
+overlay_delete(struct Lisp_Overlay *root, struct Lisp_Overlay *node);
 
-#endif /* ifndef OVERLAYS_H */
+#endif /* ifndef EMACS_OVERLAYS_H */
