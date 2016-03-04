@@ -3963,6 +3963,56 @@ buffer.  */)
   Fset_marker (OVERLAY_START (overlay), beg, buffer);
   Fset_marker (OVERLAY_END (overlay), end, buffer);
 
+  ////////////////
+
+  ptrdiff_t charpos_start, bytepos_start,
+    charpos_end, bytepos_end;
+
+
+  if (INTEGERP (beg))
+    {
+      charpos_start->char_start = XINT (beg);
+      bytepos->byte_start = -1;
+    }
+  else if (MARKERP (beg))
+    {
+      XOVERLAY (overlay)->char_start = XMARKER (beg)->charpos;
+      XOVERLAY (overlay)->byte_start = XMARKER (beg)->bytepos;
+    }
+  else
+    wrong_type_argument (Qinteger_or_marker_p, beg);
+
+  if (INTEGERP (end))
+    {
+      XOVERLAY (overlay)->char_end = XINT (end);
+      XOVERLAY (overlay)->byte_end = -1;
+    }
+  else if (MARKERP (end))
+    {
+      XOVERLAY (overlay)->char_end = XMARKER (end)->charpos;
+      XOVERLAY (overlay)->byte_end = XMARKER (end)->bytepos;
+    }
+  else
+    wrong_type_argument (Qinteger_or_marker_p, end);
+
+
+  charpos = clip_to_bounds
+	(restricted ? BUF_BEGV (b) : BUF_BEG (b), charpos,
+	 restricted ? BUF_ZV (b) : BUF_Z (b));
+      if (bytepos == -1)
+	bytepos = buf_charpos_to_bytepos (b, charpos);
+      else
+	bytepos = clip_to_bounds
+	  (restricted ? BUF_BEGV_BYTE (b) : BUF_BEG_BYTE (b),
+	   bytepos, restricted ? BUF_ZV_BYTE (b) : BUF_Z_BYTE (b));
+
+      XOVERLAY (overlay)->char_start = charpos_start;
+      XOVERLAY (overlay)->byte_start = bytepos_start;
+      XOVERLAY (overlay)->char_end = charpos_end;
+      XOVERLAY (overlay)->byte_end = bytepos_end;
+
+      ///////////
+
   n_beg = marker_position (OVERLAY_START (overlay));
   n_end = marker_position (OVERLAY_END (overlay));
 

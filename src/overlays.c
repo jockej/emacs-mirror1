@@ -22,26 +22,23 @@ const struct Lisp_Overlay sentinel;
 
 const struct Lisp_Overlay *overlay_sentinel;
 
-static struct Lisp_Overlay *
+static void
 overlay_split(struct Lisp_Overlay * root)
 {
-  struct Lisp_Overlay *right = root->right;
-  struct Lisp_Overlay *rightright = right->right;
   if (root->level != 0 &&
       right->right->level == root->level)
     {
       struct Lisp_Overlay *tmp = root;
-      root = right;
+      root = root->right;
       tmp->right = root->left;
       root->left = tmp;
       ++root->level;
-      root->left = overlay_split (root->right);
     }
 
   return root;
 }
 
-static struct Lisp_Overlay *
+static void
 overlay_skew(struct Lisp_Overlay * root)
 {
   /* If we've reach the leaves */
@@ -57,7 +54,6 @@ overlay_skew(struct Lisp_Overlay * root)
       tmp->left = root->right;
       root->right = tmp;
     }
-  root->right = overlay_skew (root->right);
   return root;
 }
 
@@ -84,18 +80,50 @@ overlay_insert(struct Lisp_Overlay *root, struct Lisp_Overlay *elm)
 struct Lisp_Overlay *
 overlay_delete(struct Lisp_Overlay *root, struct Lisp_Overlay *elm)
 {
-  static struct Lisp_Overlay *replacee, *replacer;
+  static struct Lisp_Overlay *deleted, *last;
 
   /* Search all the way down the tree */
   if (root != overlay_sentinel)
     {
       replacer = root;
-      if (root->char_start < elm->char_start)
-        root->right = overlay_delete(root->right, elm);
-      else
+      /* if our interval start point is smaller than root->char_start,
+         turn left.  */
+      if (elm->char_start < root->char_start)
         {
-          replacee = root;
           root->left = overlay_delete(root->left, elm);
         }
+      /* Else turn right and record that this might be the node to
+         be deleted  */
+      else
+        {
+          deleted = root;
+          root->right = overlay_delete(root->right, elm);
+        }
     }
+
+  if (root == last && deleted != sentinel && root == elm)
+    {
+      deleted->char_start = root->char_start;
+      deleted->char_end = root->char_end;
+      root = root->right;
+      /* Last should be GCed now */
+
+    }
+  else if (root->left->level < root->level - 1 ||
+          root->right->level < root->level - 1)
+    {
+      --root->level;
+      if (root->right->level > root->level)
+        {
+          root->right->level = root->level;
+        }
+      overlay_skew(root);
+      overlay_skew(root->right);
+      overlay_skew(root->right->right);
+      overlay_split(root);
+      overlay_split(root->right);
+    }
+}
+
+  return root;
 }
