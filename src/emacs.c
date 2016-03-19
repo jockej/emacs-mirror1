@@ -7,8 +7,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -181,6 +181,9 @@ bool noninteractive;
 /* True means remove site-lisp directories from load-path.  */
 bool no_site_lisp;
 
+/* True means put details like time stamps into builds.  */
+bool build_details;
+
 /* Name for the server started by the daemon.*/
 static char *daemon_name;
 
@@ -222,6 +225,7 @@ Initialization options:\n\
 --display, -d DISPLAY       use X server DISPLAY\n\
 ",
     "\
+--no-build-details          do not add build details such as time stamps\n\
 --no-desktop                do not load a saved desktop\n\
 --no-init-file, -q          load neither ~/.emacs nor default.el\n\
 --no-loadup, -nl            do not load loadup.el into bare Emacs\n\
@@ -1189,6 +1193,9 @@ Using an Emacs configured with --with-x-toolkit=lucid does not have this problem
   no_site_lisp
     = argmatch (argv, argc, "-nsl", "--no-site-lisp", 11, NULL, &skip_args);
 
+  build_details = ! argmatch (argv, argc, "-no-build-details",
+			      "--no-build-details", 7, NULL, &skip_args);
+
 #ifdef HAVE_NS
   ns_pool = ns_alloc_autorelease_pool ();
 #ifdef NS_IMPL_GNUSTEP
@@ -1638,6 +1645,7 @@ static const struct standard_args standard_args[] =
   { "-help", "--help", 90, 0 },
   { "-nl", "--no-loadup", 70, 0 },
   { "-nsl", "--no-site-lisp", 65, 0 },
+  { "-no-build-details", "--no-build-details", 63, 0 },
   /* -d must come last before the options handled in startup.el.  */
   { "-d", "--display", 60, 1 },
   { "-display", 0, 60, 1 },
@@ -2411,8 +2419,8 @@ Special values:
   `ms-dos'       compiled as an MS-DOS application.
   `windows-nt'   compiled as a native W32 application.
   `cygwin'       compiled using the Cygwin library.
-Anything else (in Emacs 24.1, the possibilities are: aix, berkeley-unix,
-hpux, irix, usg-unix-v) indicates some sort of Unix system.  */);
+Anything else (in Emacs 26, the possibilities are: aix, berkeley-unix,
+hpux, usg-unix-v) indicates some sort of Unix system.  */);
   Vsystem_type = intern_c_string (SYSTEM_TYPE);
   /* See configure.ac for the possible SYSTEM_TYPEs.  */
 

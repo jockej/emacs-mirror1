@@ -6843,8 +6843,8 @@ If CHAR is in [Xugo], the value is taken from FROM (or 0 if omitted)."
   (cond ((= char ?r) #o0444)
 	((= char ?w) #o0222)
 	((= char ?x) #o0111)
-	((= char ?s) #o1000)
-	((= char ?t) #o6000)
+	((= char ?s) #o6000)
+	((= char ?t) #o1000)
 	;; Rights relative to the previous file modes.
 	((= char ?X) (if (= (logand from #o111) 0) 0 #o0111))
 	((= char ?u) (let ((uright (logand #o4700 from)))
@@ -6900,7 +6900,7 @@ as in \"og+rX-w\"."
 				  (mapcar 'file-modes-char-to-who
 					  (match-string 1 modes)))))
 	      (when (= num-who 0)
-		(setq num-who (default-file-modes)))
+		(setq num-who (logior #o7000 (default-file-modes))))
 	      (setq num-modes
 		    (file-modes-rights-to-number (substring modes (match-end 1))
 						 num-who num-modes)
@@ -7082,6 +7082,78 @@ Otherwise, trash FILENAME using the freedesktop.org conventions,
 		 ;; Finally, try to move the file to the trashcan.
 		 (let ((delete-by-moving-to-trash nil))
 		   (rename-file fn new-fn)))))))))
+
+(defsubst file-attribute-type (attributes)
+  "The type field in ATTRIBUTES returned by `file-attribute'.
+The value is either t for directory, string (name linked to) for
+symbolic link, or nil."
+  (nth 0 attributes))
+
+(defsubst file-attribute-link-number (attributes)
+  "Return the number of links in ATTRIBUTES returned by `file-attribute'."
+  (nth 1 attributes))
+
+(defsubst file-attribute-user-id (attributes)
+  "The UID field in ATTRIBUTES returned by `file-attribute'.
+This is either a string or a number.  If a string value cannot be
+looked up, a numeric value, either an integer or a float, is
+returned."
+  (nth 2 attributes))
+
+(defsubst file-attribute-group-id (attributes)
+  "The GID field in ATTRIBUTES returned by `file-attribute'.
+This is either a string or a number.  If a string value cannot be
+looked up, a numeric value, either an integer or a float, is
+returned."
+  (nth 3 attributes))
+
+(defsubst file-attribute-access-time (attributes)
+  "The last access time in ATTRIBUTES returned by `file-attribute'.
+This a list of integers (HIGH LOW USEC PSEC) in the same style
+as (current-time)."
+  (nth 4 attributes))
+
+(defsubst file-attribute-modification-time (attributes)
+  "The modification time in ATTRIBUTES returned by `file-attribute'.
+This is the time of the last change to the file's contents, and
+is a list of integers (HIGH LOW USEC PSEC) in the same style
+as (current-time)."
+  (nth 5 attributes))
+
+(defsubst file-attribute-status-change-time (attributes)
+  "The status modification time in ATTRIBUTES returned by `file-attribute'.
+This is the time of last change to the file's attributes: owner
+and group, access mode bits, etc, and is a list of integers (HIGH
+LOW USEC PSEC) in the same style as (current-time)."
+  (nth 6 attributes))
+
+(defsubst file-attribute-size (attributes)
+  "The size (in bytes) in ATTRIBUTES returned by `file-attribute'.
+This is a floating point number if the size is too large for an integer."
+  (nth 7 attributes))
+
+(defsubst file-attribute-modes (attributes)
+  "The file modes in ATTRIBUTES returned by `file-attribute'.
+This is a string of ten letters or dashes as in ls -l."
+  (nth 8 attributes))
+
+(defsubst file-attribute-inode-number (attributes)
+  "The inode number in ATTRIBUTES returned by `file-attribute'.
+If it is larger than what an Emacs integer can hold, this is of
+the form (HIGH . LOW): first the high bits, then the low 16 bits.
+If even HIGH is too large for an Emacs integer, this is instead
+of the form (HIGH MIDDLE . LOW): first the high bits, then the
+middle 24 bits, and finally the low 16 bits."
+  (nth 10 attributes))
+
+(defsubst file-attribute-device-number (attributes)
+  "The file system device number in ATTRIBUTES returned by `file-attribute'.
+If it is larger than what an Emacs integer can hold, this is of
+the form (HIGH . LOW): first the high bits, then the low 16 bits.
+If even HIGH is too large for an Emacs integer, this is instead
+of the form (HIGH MIDDLE . LOW): first the high bits, then the
+middle 24 bits, and finally the low 16 bits."
+  (nth 11 attributes))
 
 
 (define-key ctl-x-map "\C-f" 'find-file)

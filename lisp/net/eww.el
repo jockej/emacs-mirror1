@@ -418,7 +418,7 @@ Currently this means either text/html or application/xhtml+xml."
 	(source (and (null document)
 		     (buffer-substring (point) (point-max)))))
     (with-current-buffer buffer
-      (setq bidi-paragraph-direction 'left-to-right)
+      (setq bidi-paragraph-direction nil)
       (plist-put eww-data :source source)
       (plist-put eww-data :dom document)
       (let ((inhibit-read-only t)
@@ -580,7 +580,7 @@ Currently this means either text/html or application/xhtml+xml."
   (let ((inhibit-read-only t))
     (remove-overlays)
     (erase-buffer))
-  (setq bidi-paragraph-direction 'left-to-right)
+  (setq bidi-paragraph-direction nil)
   (unless (eq major-mode 'eww-mode)
     (eww-mode)))
 
@@ -616,6 +616,21 @@ Currently this means either text/html or application/xhtml+xml."
 	(when (fboundp 'html-mode)
 	  (html-mode))))
     (view-buffer buf)))
+
+(defun eww-toggle-paragraph-direction ()
+  "Cycle the paragraph direction between left-to-right, right-to-left and auto."
+  (interactive)
+  (setq bidi-paragraph-direction
+        (cond ((eq bidi-paragraph-direction 'left-to-right)
+               nil)
+              ((eq bidi-paragraph-direction 'right-to-left)
+               'left-to-right)
+              (t
+               'right-to-left)))
+  (message "The paragraph direction is now %s"
+           (if (null bidi-paragraph-direction)
+               "automatic"
+             bidi-paragraph-direction)))
 
 (defun eww-readable ()
   "View the main \"readable\" parts of the current web page.
@@ -701,6 +716,7 @@ the like."
     (define-key map "s" 'eww-switch-to-buffer)
     (define-key map "S" 'eww-list-buffers)
     (define-key map "F" 'eww-toggle-fonts)
+    (define-key map "D" 'eww-toggle-paragraph-direction)
     (define-key map [(meta C)] 'eww-toggle-colors)
 
     (define-key map "b" 'eww-add-bookmark)
@@ -729,7 +745,8 @@ the like."
 	["List cookies" url-cookie-list t]
 	["Toggle fonts" eww-toggle-fonts t]
 	["Toggle colors" eww-toggle-colors t]
-       ["Character Encoding" eww-set-character-encoding]))
+        ["Character Encoding" eww-set-character-encoding]
+        ["Toggle Paragraph Direction" eww-toggle-paragraph-direction]))
     map))
 
 (defvar eww-tool-bar-map

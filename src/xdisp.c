@@ -7,8 +7,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -9794,26 +9794,28 @@ the maximum pixel-height of all text lines.
 
 The optional argument FROM, if non-nil, specifies the first text
 position and defaults to the minimum accessible position of the buffer.
-If FROM is t, use the minimum accessible position that is not a newline
-character.  TO, if non-nil, specifies the last text position and
+If FROM is t, use the minimum accessible position that starts a
+non-empty line.  TO, if non-nil, specifies the last text position and
 defaults to the maximum accessible position of the buffer.  If TO is t,
-use the maximum accessible position that is not a newline character.
+use the maximum accessible position that ends a non-empty line.
 
 The optional argument X-LIMIT, if non-nil, specifies the maximum text
 width that can be returned.  X-LIMIT nil or omitted, means to use the
-pixel-width of WINDOW's body; use this if you do not intend to change
-the width of WINDOW.  Use the maximum width WINDOW may assume if you
-intend to change WINDOW's width.  In any case, text whose x-coordinate
-is beyond X-LIMIT is ignored.  Since calculating the width of long lines
-can take some time, it's always a good idea to make this argument as
-small as possible; in particular, if the buffer contains long lines that
-shall be truncated anyway.
+pixel-width of WINDOW's body; use this if you want to know how high
+WINDOW should be become in order to fit all of its buffer's text with
+the width of WINDOW unaltered.  Use the maximum width WINDOW may assume
+if you intend to change WINDOW's width.  In any case, text whose
+x-coordinate is beyond X-LIMIT is ignored.  Since calculating the width
+of long lines can take some time, it's always a good idea to make this
+argument as small as possible; in particular, if the buffer contains
+long lines that shall be truncated anyway.
 
 The optional argument Y-LIMIT, if non-nil, specifies the maximum text
-height that can be returned.  Text lines whose y-coordinate is beyond
-Y-LIMIT are ignored.  Since calculating the text height of a large
-buffer can take some time, it makes sense to specify this argument if
-the size of the buffer is unknown.
+height (exluding the height of the mode- or header-line, if any) that
+can be returned.  Text lines whose y-coordinate is beyond Y-LIMIT are
+ignored.  Since calculating the text height of a large buffer can take
+some time, it makes sense to specify this argument if the size of the
+buffer is large or unknown.
 
 Optional argument MODE-AND-HEADER-LINE nil or omitted means do not
 include the height of the mode- or header-line of WINDOW in the return
@@ -9831,7 +9833,7 @@ include the height of both, if present, in the return value.  */)
   ptrdiff_t start, end, pos;
   struct text_pos startp;
   void *itdata = NULL;
-  int c, max_y = -1, x = 0, y = 0;
+  int c, max_x = 0, max_y = 0, x = 0, y = 0;
 
   CHECK_BUFFER (buffer);
   b = XBUFFER (buffer);
@@ -9876,11 +9878,13 @@ include the height of both, if present, in the return value.  */)
       end = max (start, min (XINT (to), ZV));
     }
 
-  if (!NILP (y_limit))
-    {
-      CHECK_NUMBER (y_limit);
-      max_y = min (XINT (y_limit), INT_MAX);
-    }
+  if (!NILP (x_limit) && RANGED_INTEGERP (0, x_limit, INT_MAX))
+    max_x = XINT (x_limit);
+
+  if (NILP (y_limit))
+    max_y = INT_MAX;
+  else if (RANGED_INTEGERP (0, y_limit, INT_MAX))
+    max_y = XINT (y_limit);
 
   itdata = bidi_shelve_cache ();
   SET_TEXT_POS (startp, start, CHAR_TO_BYTE (start));
@@ -9890,27 +9894,30 @@ include the height of both, if present, in the return value.  */)
     x = move_it_to (&it, end, -1, max_y, -1, MOVE_TO_POS | MOVE_TO_Y);
   else
     {
-      CHECK_NUMBER (x_limit);
-      it.last_visible_x = min (XINT (x_limit), INFINITY);
+      it.last_visible_x = max_x;
       /* Actually, we never want move_it_to stop at to_x.  But to make
 	 sure that move_it_in_display_line_to always moves far enough,
-	 we set it to INT_MAX and specify MOVE_TO_X.  */
-      x = move_it_to (&it, end, INT_MAX, max_y, -1,
-		      MOVE_TO_POS | MOVE_TO_X | MOVE_TO_Y);
+	 we set it to INT_MAX and specify MOVE_TO_X.  Also bound width
+	 value by X-LIMIT.  */
+      x = min (move_it_to (&it, end, INT_MAX, max_y, -1,
+			   MOVE_TO_POS | MOVE_TO_X | MOVE_TO_Y),
+	       max_x);
     }
 
-  y = it.current_y + it.max_ascent + it.max_descent;
+  /* Subtract height of header-line which was counted automatically by
+     start_display.  */
+  y = min (it.current_y + it.max_ascent + it.max_descent
+	   - WINDOW_HEADER_LINE_HEIGHT (w),
+	   max_y);
 
-  if (!EQ (mode_and_header_line, Qheader_line)
-      && !EQ (mode_and_header_line, Qt))
-    /* Do not count the header-line which was counted automatically by
-       start_display.  */
-    y = y - WINDOW_HEADER_LINE_HEIGHT (w);
+  if (EQ (mode_and_header_line, Qheader_line)
+      || EQ (mode_and_header_line, Qt))
+    /* Re-add height of header-line as requested.  */
+    y = y + WINDOW_HEADER_LINE_HEIGHT (w);
 
   if (EQ (mode_and_header_line, Qmode_line)
       || EQ (mode_and_header_line, Qt))
-    /* Do count the mode-line which is not included automatically by
-       start_display.  */
+    /* Add height of mode-line as requested.  */
     y = y + WINDOW_MODE_LINE_HEIGHT (w);
 
   bidi_unshelve_cache (itdata, false);
@@ -11232,6 +11239,7 @@ clear_garbaged_frames (void)
   if (frame_garbaged)
     {
       Lisp_Object tail, frame;
+      struct frame *sf = SELECTED_FRAME ();
 
       FOR_EACH_FRAME (tail, frame)
 	{
@@ -11239,7 +11247,13 @@ clear_garbaged_frames (void)
 
 	  if (FRAME_VISIBLE_P (f) && FRAME_GARBAGED_P (f))
 	    {
-	      if (f->resized_p)
+	      if (f->resized_p
+		  /* It makes no sense to redraw a non-selected TTY
+		     frame, since that will actually clear the
+		     selected frame, and might leave the selected
+		     frame with corrupted display, if it happens not
+		     to be marked garbaged.  */
+		  && !(f != sf && (FRAME_TERMCAP_P (f) || FRAME_MSDOS_P (f))))
 		redraw_frame (f);
 	      else
 		clear_current_matrices (f);
@@ -31375,7 +31389,7 @@ This variable is not guaranteed to be accurate except while processing
 
   DEFVAR_LISP ("frame-title-format", Vframe_title_format,
     doc: /* Template for displaying the title bar of visible frames.
-(Assuming the window manager supports this feature.)
+\(Assuming the window manager supports this feature.)
 
 This variable has the same structure as `mode-line-format', except that
 the %c and %l constructs are ignored.  It is used only on frames for
@@ -31383,10 +31397,10 @@ which no explicit name has been set (see `modify-frame-parameters').  */);
 
   DEFVAR_LISP ("icon-title-format", Vicon_title_format,
     doc: /* Template for displaying the title bar of an iconified frame.
-(Assuming the window manager supports this feature.)
+\(Assuming the window manager supports this feature.)
 This variable has the same structure as `mode-line-format' (which see),
 and is used only on frames for which no explicit name has been set
-(see `modify-frame-parameters').  */);
+\(see `modify-frame-parameters').  */);
   Vicon_title_format
     = Vframe_title_format
     = listn (CONSTYPE_PURE, 3,

@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -860,6 +860,14 @@ ID-FORMAT specifies the preferred format of attributes uid and gid (see
 below) - valid values are `string' and `integer'.  The latter is the
 default, but we plan to change that, so you should specify a non-nil value
 for ID-FORMAT if you use the returned uid or gid.
+
+To access the elements returned, the following access functions are
+provided: `file-attribute-type', `file-attribute-link-number',
+`file-attribute-user-id', `file-attribute-group-id',
+`file-attribute-access-time', `file-attribute-modification-time',
+`file-attribute-status-change-time', `file-attribute-size',
+`file-attribute-modes', `file-attribute-inode-number', and
+`file-attribute-device-number'.
 
 Elements of the attribute list are:
  0. t for directory, string (name linked to) for symbolic link, or nil.

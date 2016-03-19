@@ -7,8 +7,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -4149,6 +4149,9 @@ extern bool noninteractive;
 
 /* True means remove site-lisp directories from load-path.  */
 extern bool no_site_lisp;
+
+/* True means put details like time stamps into builds.  */
+extern bool build_details;
 
 /* Pipe used to send exit notification to the daemon parent at
    startup.  On Windows, we use a kernel event instead.  */

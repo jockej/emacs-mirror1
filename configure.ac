@@ -546,6 +546,14 @@ AC_ARG_ENABLE(gtk-deprecation-warnings,
 		[Show Gtk+/Gdk deprecation warnings for Gtk+ >= 3.0])],
 [ac_enable_gtk_deprecation_warnings="${enableval}"],[])
 
+BUILD_DETAILS=
+AC_ARG_ENABLE([build-details],
+  [AS_HELP_STRING([--disable-build-details],
+		  [Make the build more deterministic by omitting host
+		   names, time stamps, etc. from the output.])],
+  [test "$enableval" = no && BUILD_DETAILS=--no-build-details])
+AC_SUBST([BUILD_DETAILS])
+
 dnl This used to use changequote, but, apart from 'changequote is evil'
 dnl per the autoconf manual, we can speed up autoconf somewhat by quoting
 dnl the great gob of text.  Thus it's not processed for possible expansion.
@@ -607,12 +615,7 @@ case "${canonical}" in
       * )            unported=yes ;;
     esac
     opsys=darwin
-    ## Use fink packages if available.
-    ## FIXME find a better way to do this: http://debbugs.gnu.org/11507
-##    if test -d /sw/include && test -d /sw/lib; then
-##      GCC_TEST_OPTIONS="-I/sw/include -L/sw/lib"
-##      NON_GCC_TEST_OPTIONS=${GCC_TEST_OPTIONS}
-##    fi
+    ## FIXME: Find a way to use Fink if available (Bug#11507).
   ;;
 
   ## Chromium Native Client
@@ -646,16 +649,6 @@ case "${canonical}" in
   ;;
   powerpc-ibm-aix[5-9]* | powerpc-ibm-aix[1-9][0-9]* )
     opsys=aix4-2
-  ;;
-
-  ## Silicon Graphics machines
-  ## Iris 4D
-  mips-sgi-irix6.5 )
-    opsys=irix6-5
-    # Without defining _LANGUAGE_C, things get masked out in the headers
-    # so that, for instance, grepping for 'free' in stdlib.h fails and
-    # AC_HEADER_STD_C fails.   (MIPSPro 7.2.1.2m compilers, Irix 6.5.3m).
-    NON_GCC_TEST_OPTIONS="-D_LANGUAGE_C"
   ;;
 
   ## Suns
@@ -774,8 +767,6 @@ AM_PROG_CC_C_O
 
 if test x$GCC = xyes; then
   test "x$GCC_TEST_OPTIONS" != x && CC="$CC $GCC_TEST_OPTIONS"
-else
-  test "x$NON_GCC_TEST_OPTIONS" != x && CC="$CC $NON_GCC_TEST_OPTIONS"
 fi
 
 dnl This is used in lib/Makefile.am to use nt/gnulib.mk, the
@@ -1225,7 +1216,6 @@ fi
 
 dnl We need -znocombreloc if we're using a relatively recent GNU ld.
 dnl If we can link with the flag, it shouldn't do any harm anyhow.
-dnl (Don't use '-z nocombreloc' as -z takes no arg on Irix.)
 dnl Treat GCC specially since it just gives a non-fatal 'unrecognized option'
 dnl if not built to support GNU ld.
 
@@ -1454,7 +1444,7 @@ LIBS=$OLD_LIBS
 
 dnl Current possibilities handled by sed (aix4-2 -> aix,
 dnl gnu-linux -> gnu/linux, etc.):
-dnl gnu, gnu/linux, gnu/kfreebsd, aix, cygwin, darwin, hpux, irix.
+dnl gnu, gnu/linux, gnu/kfreebsd, aix, cygwin, darwin, hpux.
 dnl And special cases: berkeley-unix, usg-unix-v, ms-dos, windows-nt.
 SYSTEM_TYPE=`echo $opsys | sed -e 's/[[0-9]].*//' -e 's|-|/|'`
 
@@ -2191,7 +2181,7 @@ fi
 
 use_mmap_for_buffers=no
 case "$opsys" in
-  cygwin|mingw32|irix6-5) use_mmap_for_buffers=yes ;;
+  cygwin|mingw32) use_mmap_for_buffers=yes ;;
 esac
 
 AC_FUNC_MMAP
@@ -3610,14 +3600,6 @@ if test "${HAVE_X11}" = "yes"; then
     fi
   fi
   if test $HAVE_XRANDR = yes; then
-    SAVE_CFLAGS="$CFLAGS"
-    SAVE_LIBS="$LIBS"
-    CFLAGS="$XRANDR_CFLAGS $CFLAGS"
-    LIBS="$XRANDR_LIBS $LIBS"
-    AC_CHECK_FUNCS(XRRGetOutputPrimary XRRGetScreenResourcesCurrent)
-    CFLAGS="$SAVE_CFLAGS"
-    LIBS="$SAVE_LIBS"
-
     AC_DEFINE(HAVE_XRANDR, 1, [Define to 1 if you have the XRandr extension.])
   fi
 fi
@@ -3711,20 +3693,6 @@ fi
 AC_SUBST(LIBXML2_LIBS)
 AC_SUBST(LIBXML2_CFLAGS)
 
-# If netdb.h doesn't declare h_errno, we must declare it by hand.
-# On MinGW, that is provided by nt/inc/sys/socket.h and w32.c.
-if test "${opsys}" = "mingw32"; then
-  emacs_cv_netdb_declares_h_errno=yes
-fi
-AC_CACHE_CHECK(whether netdb declares h_errno,
-	       emacs_cv_netdb_declares_h_errno,
-[AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <netdb.h>]],
-  [[return h_errno;]])],
-  emacs_cv_netdb_declares_h_errno=yes, emacs_cv_netdb_declares_h_errno=no)])
-if test $emacs_cv_netdb_declares_h_errno = yes; then
-  AC_DEFINE(HAVE_H_ERRNO, 1, [Define to 1 if netdb.h declares h_errno.])
-fi
-
 # Check for mail-locking functions in a "mail" library.  Probably this should
 # have the same check as for liblockfile below.
 AC_CHECK_LIB(mail, maillock, have_mail=yes, have_mail=no)
@@ -3768,7 +3736,7 @@ mail_lock=no
 case "$opsys" in
   aix4-2) mail_lock="lockf" ;;
 
-  gnu|freebsd|dragonfly|netbsd|openbsd|darwin|irix6-5) mail_lock="flock" ;;
+  gnu|freebsd|dragonfly|netbsd|openbsd|darwin) mail_lock="flock" ;;
 
   ## On GNU/Linux systems, both methods are used by various mail programs.
   ## I assume most people are using newer mailers that have heard of flock.
@@ -3813,7 +3781,7 @@ AC_CHECK_FUNCS(accept4 fchdir gethostname \
 getrusage get_current_dir_name \
 lrand48 random rint \
 select getpagesize setlocale newlocale \
-getrlimit setrlimit shutdown getaddrinfo \
+getrlimit setrlimit shutdown \
 pthread_sigmask strsignal setitimer \
 sendto recvfrom getsockname getpeername getifaddrs freeifaddrs \
 gai_strerror sync \
@@ -4000,44 +3968,13 @@ AC_CACHE_CHECK([whether signals can be handled on alternate stack],
      [emacs_cv_alternate_stack=yes],
      [emacs_cv_alternate_stack=no])])
 
-# Do we have res_init, for detecting changes in /etc/resolv.conf?
-# On Darwin, res_init appears not to be useful: see bug#562 and
-# http://lists.gnu.org/archive/html/emacs-devel/2007-11/msg01467.html
-resolv=no
-
-if test $opsys != darwin; then
-
-  AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <netinet/in.h>
-#include <arpa/nameser.h>
-#include <resolv.h>]],
-    [[return res_init();]])],
-    have_res_init=yes, have_res_init=no)
-  if test "$have_res_init" = no; then
-    OLIBS="$LIBS"
-    LIBS="$LIBS -lresolv"
-    AC_MSG_CHECKING(for res_init with -lresolv)
-    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <netinet/in.h>
-#include <arpa/nameser.h>
-#include <resolv.h>]],
-      [[return res_init();]])],
-      have_res_init=yes, have_res_init=no)
-    AC_MSG_RESULT($have_res_init)
-    if test "$have_res_init" = yes ; then
-      resolv=yes
-    fi
-    LIBS="$OLIBS"
-  fi
-
-  if test "$have_res_init" = yes; then
-    AC_DEFINE(HAVE_RES_INIT, 1, [Define to 1 if res_init is available.])
-  fi
-fi                              dnl !darwin
-
 # Do we need the Hesiod library to provide the support routines?
 dnl FIXME?  Should we be skipping this on Darwin too?
 LIBHESIOD=
+LIBRESOLV=
 if test "$with_hesiod" != no ; then
   # Don't set $LIBS here -- see comments above.  FIXME which comments?
+  resolv=no
   AC_CHECK_FUNC(res_send, , [AC_CHECK_FUNC(__res_send, ,
      [AC_CHECK_LIB(resolv, res_send, resolv=yes,
 		  [AC_CHECK_LIB(resolv, __res_send, resolv=yes)])])])
@@ -4046,21 +3983,16 @@ if test "$with_hesiod" != no ; then
   else
     RESOLVLIB=
   fi
+  hesiod=no
   AC_CHECK_FUNC(hes_getmailhost, , [AC_CHECK_LIB(hesiod, hes_getmailhost,
 	hesiod=yes, :, $RESOLVLIB)])
 
   if test x"$hesiod" = xyes; then
     LIBHESIOD=-lhesiod
+    LIBRESOLV=$RESOLVLIB
   fi
 fi
 AC_SUBST(LIBHESIOD)
-
-# Do we need libresolv (due to res_init or Hesiod)?
-if test "$resolv" = yes && test $opsys != darwin; then
-  LIBRESOLV=-lresolv
-else
-  LIBRESOLV=
-fi
 AC_SUBST(LIBRESOLV)
 
 # These tell us which Kerberos-related libraries to use.
@@ -4314,7 +4246,7 @@ esac
 
 
 case $opsys in
-  irix6-5 | sol2* | unixware )
+  sol2* | unixware )
     dnl Some SVr4s don't define NSIG in sys/signal.h for ANSI environments;
     dnl instead, there's a system variable _sys_nsig.  Unfortunately, we
     dnl need the constant to dimension an array.  So wire in the appropriate
@@ -4328,7 +4260,7 @@ emacs_broken_SIGIO=no
 case $opsys in
   dnl SIGIO exists, but the feature doesn't work in the way Emacs needs.
   dnl See eg <http://article.gmane.org/gmane.os.openbsd.ports/46831>.
-  hpux* | irix6-5 | nacl | openbsd | sol2* | unixware )
+  hpux* | nacl | openbsd | sol2* | unixware )
     emacs_broken_SIGIO=yes
     ;;
 
@@ -4436,7 +4368,7 @@ dnl generated in the Makefile generated by 'xmkmf'.  If we don't define
 dnl NARROWPROTO, we will see the wrong function prototypes for X functions
 dnl taking float or double parameters.
 case $opsys in
-  cygwin|gnu|gnu-linux|gnu-kfreebsd|irix6-5|freebsd|netbsd|openbsd)
+  cygwin|gnu|gnu-linux|gnu-kfreebsd|freebsd|netbsd|openbsd)
     AC_DEFINE(NARROWPROTO, 1, [Define if system's imake configuration
       file defines 'NeedWidePrototypes' as 'NO'.])
   ;;
@@ -4444,7 +4376,6 @@ esac
 
 
 dnl Used in process.c, this must be a loop, even if it only runs once.
-dnl (Except on SGI; see below.  Take that, clarity and consistency!)
 AH_TEMPLATE(PTY_ITERATION, [How to iterate over PTYs.])
 dnl Only used if !PTY_ITERATION.  Iterate from FIRST_PTY_LETTER to z,
 dnl trying suffixes 0-16.
@@ -4507,27 +4438,6 @@ case $opsys in
     AC_DEFINE(PTY_TTY_NAME_SPRINTF, [sprintf (pty_name, "/dev/pty/tty%c%x", c, i);])
     ;;
 
-  irix6-5 )
-    dnl It looks like this cannot be right, because it is not a loop.
-    dnl However, process.c actually does this:
-    dnl # ifndef __sgi
-    dnl   continue;
-    dnl # else
-    dnl   return -1;
-    dnl # endif
-    dnl which presumably makes it OK, since irix == sgi (?).
-    dnl FIXME it seems like this special treatment is unnecessary?
-    dnl Why can't irix use a single-trip loop like eg cygwin?
-    AC_DEFINE(PTY_ITERATION, [])
-    dnl Not used, because PTY_ITERATION is defined.
-    AC_DEFINE(FIRST_PTY_LETTER, ['q'])
-    AC_DEFINE(PTY_OPEN, [ { struct sigaction ocstat, cstat; struct stat stb; char * name; sigemptyset(&cstat.sa_mask); cstat.sa_handler = SIG_DFL; cstat.sa_flags = 0; sigaction(SIGCHLD, &cstat, &ocstat); name = _getpty (&fd, O_RDWR | O_NDELAY, 0600, 0); sigaction(SIGCHLD, &ocstat, (struct sigaction *)0); if (name == 0) return -1; if (fd < 0) return -1; if (fstat (fd, &stb) < 0) return -1; strcpy (pty_name, name); }])
-    dnl No need to get the pty name at all.
-    AC_DEFINE(PTY_NAME_SPRINTF, [])
-    dnl No need to use sprintf to get the tty name--we get that from _getpty.
-    AC_DEFINE(PTY_TTY_NAME_SPRINTF, [])
-    ;;
-
   sol2* )
     dnl On SysVr4, grantpt(3) forks a subprocess, so do not use
     dnl O_CLOEXEC when opening the pty, and keep the SIGCHLD handler
@@ -4562,8 +4472,7 @@ AH_TEMPLATE(SIGNALS_VIA_CHARACTERS, [Make process_send_signal work by
 
 case $opsys in
   dnl Perry Smith <pedz@ddivt1.austin.ibm.com> says this is correct for AIX.
-  dnl thomas@mathematik.uni-bremen.de says this is needed for IRIX.
-  aix4-2 | cygwin | gnu | irix6-5 | dragonfly | freebsd | netbsd | openbsd | darwin )
+  aix4-2 | cygwin | gnu | dragonfly | freebsd | netbsd | openbsd | darwin )
     AC_DEFINE(SIGNALS_VIA_CHARACTERS, 1)
     ;;
 
@@ -4643,8 +4552,7 @@ if test x$GCC = xyes; then
    AC_DEFINE(GC_SETJMP_WORKS, 1)
 else
   case $opsys in
-    dnl irix: Tested on Irix 6.5.  SCM worked on earlier versions.
-    aix* | dragonfly | freebsd | netbsd | openbsd | irix6-5 | sol2* )
+    aix* | dragonfly | freebsd | netbsd | openbsd | sol2* )
       AC_DEFINE(GC_SETJMP_WORKS, 1)
       ;;
   esac
@@ -4748,12 +4656,6 @@ case $opsys in
     AC_DEFINE(HPUX, [], [Define if the system is HPUX.])
     ;;
 
-  irix6-5)
-    AC_DEFINE(USG, [])
-    AC_DEFINE(USG5_4, [])
-    AC_DEFINE(IRIX6_5, [], [Define if the system is IRIX.])
-    ;;
-
   mingw32)
     AC_DEFINE(DOS_NT, [])
     AC_DEFINE(WINDOWSNT, 1, [Define if compiling for native MS Windows.])
@@ -4825,11 +4727,6 @@ case $opsys in
     AC_DEFINE(USG_SUBTTY_WORKS, 1, [Define for USG systems where it
       works to open a pty's tty in the parent process, then close and
       reopen it in the child.])
-    ;;
-
-  irix6-5)
-    AC_DEFINE(PREFER_VSUSP, 1, [Define if process_send_signal should
-      use VSUSP instead of VSWTCH.])
     ;;
 
   sol2-10)
@@ -5211,8 +5108,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of

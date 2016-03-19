@@ -9,8 +9,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,7 +28,17 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <sys/types.h>
 #ifdef WINDOWSNT
 #include "ntlib.h"
-#include <winsock.h>
+#undef _WIN32_WINNT
+#define _WIN32_WINNT 0x0501	/* for getaddrinfo stuff */
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#undef getaddrinfo
+#define getaddrinfo  sys_getaddrinfo
+#undef freeaddrinfo
+#define freeaddrinfo sys_freeaddrinfo
+int sys_getaddrinfo (const char * node, const char * service,
+		     const struct addrinfo * hints, struct addrinfo ** res);
+void sys_freeaddrinfo (struct addrinfo * ai);
 #undef SOCKET_ERROR
 #define RECV(s,buf,len,flags) recv (s,buf,len,flags)
 #define SEND(s,buf,len,flags) send (s,buf,len,flags)
@@ -91,12 +101,6 @@ extern int krb_sendauth (/* long, int, KTEXT, char *, char *, char *,
 extern char *krb_realmofhost (/* char * */);
 #endif /* ! KERBEROS5 */
 #endif /* KERBEROS */
-
-#ifndef WINDOWSNT
-#ifndef HAVE_H_ERRNO
-extern int h_errno;
-#endif
-#endif
 
 static int socket_connection (char *, int);
 static int pop_getline (popserver, char **);
@@ -962,13 +966,9 @@ static int have_winsock = 0;
 static int
 socket_connection (char *host, int flags)
 {
-#ifdef HAVE_GETADDRINFO
   struct addrinfo *res, *it;
   struct addrinfo hints;
   int ret;
-#else /* !HAVE_GETADDRINFO */
-  struct hostent *hostent;
-#endif
   struct servent *servent;
   struct sockaddr_in addr;
   char found_port = 0;
@@ -1055,7 +1055,6 @@ socket_connection (char *host, int flags)
 
     }
 
-#ifdef HAVE_GETADDRINFO
   memset (&hints, 0, sizeof (hints));
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_CANONNAME;
@@ -1086,34 +1085,6 @@ socket_connection (char *host, int flags)
       strcpy (realhost, it->ai_canonname);
     }
   freeaddrinfo (res);
-
-#else /* !HAVE_GETADDRINFO */
-  do
-    {
-      hostent = gethostbyname (host);
-      try_count++;
-      if ((! hostent) && ((h_errno != TRY_AGAIN) || (try_count == 5)))
-	{
-	  strcpy (pop_error, "Could not determine POP server's address");
-	  return (-1);
-	}
-    } while (! hostent);
-
-  while (*hostent->h_addr_list)
-    {
-      memcpy (&addr.sin_addr, *hostent->h_addr_list, hostent->h_length);
-      if (! connect (sock, (struct sockaddr *) &addr, sizeof (addr)))
-	break;
-      hostent->h_addr_list++;
-    }
-  connect_ok = *hostent->h_addr_list != NULL;
-  if (! connect_ok)
-    {
-      realhost = alloca (strlen (hostent->h_name) + 1);
-      strcpy (realhost, hostent->h_name);
-    }
-
-#endif /* !HAVE_GETADDRINFO */
 
 #define CONNECT_ERROR "Could not connect to POP server: "
 
@@ -1184,7 +1155,7 @@ socket_connection (char *host, int flags)
 	    {
 	      int errlen = err_ret->text.length;
 	      snprintf (pop_error + pop_error_len, ERROR_MAX - pop_error_len,
-			" [server says '.*%s']", errlen, err_ret->text.data);
+			" [server says '%.*s']", errlen, err_ret->text.data);
 	    }
 #elif defined HAVE_KRB5_ERROR_E_TEXT
 	  if (err_ret && err_ret->e_text && **err_ret->e_text)
@@ -1581,4 +1552,143 @@ find_crlf (char *in_string, int len)
   return (0);
 }
 
+#ifdef WINDOWSNT
+/* The following 2 functions are only available since XP, so we load
+   them dynamically and provide fallbacks.  */
+
+int (WINAPI *pfn_getaddrinfo) (const char *, const char *,
+			       const struct addrinfo *, struct addrinfo **);
+void (WINAPI *pfn_freeaddrinfo) (struct addrinfo *);
+
+static int
+load_ws2 (void)
+{
+  static int ws2_loaded = 0;
+
+  if (!ws2_loaded)
+    {
+      HANDLE ws2_lib = LoadLibrary ("Ws2_32.dll");
+
+      if (ws2_lib != NULL)
+	{
+	  ws2_loaded = 1;
+	  pfn_getaddrinfo = (void *) GetProcAddress (ws2_lib, "getaddrinfo");
+	  pfn_freeaddrinfo = (void *) GetProcAddress (ws2_lib, "freeaddrinfo");
+	  /* Paranoia: these two functions should go together, so if
+	     one is absent, we cannot use the other.  */
+	  if (pfn_getaddrinfo == NULL)
+	    pfn_freeaddrinfo = NULL;
+	  else if (pfn_freeaddrinfo == NULL)
+	    pfn_getaddrinfo = NULL;
+	}
+    }
+  if (!ws2_loaded)
+    {
+      errno = ENETDOWN;
+      return -1;
+    }
+  return 0;
+}
+
+
+int
+sys_getaddrinfo (const char *node, const char *service,
+		 const struct addrinfo *hints, struct addrinfo **res)
+{
+  int rc;
+
+  if (load_ws2 () != 0)
+    {
+      errno = ENETDOWN;
+      return WSANO_RECOVERY;
+    }
+
+  if (pfn_getaddrinfo)
+    rc = pfn_getaddrinfo (node, service, hints, res);
+  else
+    {
+      int port = 0;
+      struct hostent *host_info;
+      struct gai_storage {
+	struct addrinfo addrinfo;
+	struct sockaddr_in sockaddr_in;
+      } *gai_storage;
+
+      /* We don't support any flags besides AI_CANONNAME.  */
+      if (hints && (hints->ai_flags & ~(AI_CANONNAME)) != 0)
+	return WSAEINVAL;
+      /* NODE cannot be NULL, since pop.c has fallbacks for that.  */
+      if (!node)
+	return WSAHOST_NOT_FOUND;
+
+      if (service)
+	{
+	  const char *protocol =
+	    (hints && hints->ai_socktype == SOCK_DGRAM) ? "udp" : "tcp";
+	  struct servent *srv = getservbyname (service, protocol);
+
+	  if (srv)
+	    port = srv->s_port;
+	  else
+	    return WSAHOST_NOT_FOUND;
+	}
+
+      gai_storage = calloc (1, sizeof *gai_storage);
+      gai_storage->sockaddr_in.sin_port = port;
+      host_info = gethostbyname (node);
+      if (host_info)
+	{
+	  memcpy (&gai_storage->sockaddr_in.sin_addr,
+		  host_info->h_addr, host_info->h_length);
+	  gai_storage->sockaddr_in.sin_family = host_info->h_addrtype;
+	}
+      else
+	{
+	  free (gai_storage);
+	  return WSAHOST_NOT_FOUND;
+	}
+
+      gai_storage->addrinfo.ai_addr =
+	(struct sockaddr *)&gai_storage->sockaddr_in;
+      gai_storage->addrinfo.ai_addrlen = sizeof (gai_storage->sockaddr_in);
+      if (hints && (hints->ai_flags & AI_CANONNAME) != 0)
+	{
+	  gai_storage->addrinfo.ai_canonname = strdup (host_info->h_name);
+	  if (!gai_storage->addrinfo.ai_canonname)
+	    {
+	      free (gai_storage);
+	      return WSA_NOT_ENOUGH_MEMORY;
+	    }
+	}
+      gai_storage->addrinfo.ai_protocol = (hints) ? hints->ai_protocol : 0;
+      gai_storage->addrinfo.ai_socktype = (hints) ? hints->ai_socktype : 0;
+      gai_storage->addrinfo.ai_family = gai_storage->sockaddr_in.sin_family;
+      gai_storage->addrinfo.ai_next = NULL;
+
+      *res = &gai_storage->addrinfo;
+      rc = 0;
+    }
+
+  return rc;
+}
+
+void
+sys_freeaddrinfo (struct addrinfo *ai)
+{
+  if (load_ws2 () != 0)
+    {
+      errno = ENETDOWN;
+      return;
+    }
+
+  if (pfn_freeaddrinfo)
+    pfn_freeaddrinfo (ai);
+  else
+    {
+      if (ai->ai_canonname)
+	free (ai->ai_canonname);
+      free (ai);
+    }
+}
+#endif	/* WINDOWSNT */
 #endif /* MAIL_USE_POP */

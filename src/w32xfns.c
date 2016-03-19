@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -48,6 +48,19 @@ init_crit (void)
      when the input queue is empty, so make it a manual reset event. */
   input_available = CreateEvent (NULL, TRUE, FALSE, NULL);
 
+  /* Initialize the linked list of notifications sets that will be
+     used to communicate between the watching worker threads and the
+     main thread.  */
+  notifications_set_head = malloc (sizeof(struct notifications_set));
+  if (notifications_set_head)
+    {
+      memset (notifications_set_head, 0, sizeof(struct notifications_set));
+      notifications_set_head->next
+	= notifications_set_head->prev = notifications_set_head;
+    }
+  else
+    DebPrint(("Out of memory: can't initialize notifications sets."));
+
 #ifdef WINDOWSNT
   keyboard_handle = input_available;
 #endif /* WINDOWSNT */
@@ -76,6 +89,21 @@ delete_crit (void)
       CloseHandle (interrupt_handle);
       interrupt_handle = NULL;
     }
+
+  if (notifications_set_head)
+    {
+      /* Free any remaining notifications set that could be left over.  */
+      while (notifications_set_head->next != notifications_set_head)
+	{
+	  struct notifications_set *ns = notifications_set_head->next;
+	  notifications_set_head->next = ns->next;
+	  ns->next->prev = notifications_set_head;
+	  if (ns->notifications)
+	    free (ns->notifications);
+	  free (ns);
+	}
+    }
+  free (notifications_set_head);
 }
 
 void

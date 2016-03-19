@@ -152,6 +152,16 @@ renamed by `dired-do-rename' and `dired-do-rename-regexp'."
   :version "24.3"
   :group 'wdired)
 
+(defcustom wdired-create-parent-directories t
+  "If non-nil, create parent directories of destination files.
+If non-nil, when you rename a file to a destination path within a
+nonexistent directory, wdired will create any parent directories
+necessary.  When nil, attempts to rename a file into a
+nonexistent directory will fail."
+  :version "25.2"
+  :type 'boolean
+  :group 'wdired)
+
 (defvar wdired-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map "\C-x\C-s" 'wdired-finish-edit)
@@ -294,14 +304,15 @@ or \\[wdired-abort-changes] to abort changes")))
       (put-text-property b-protection (point-max) 'read-only t))))
 
 ;; This code is a copy of some dired-get-filename lines.
-(defsubst wdired-normalize-filename (file)
-  (setq file
-	;; FIXME: shouldn't we check for a `b' argument or somesuch before
-	;; doing such unquoting?  --Stef
-	(read (concat
-	       "\"" (replace-regexp-in-string
-		     "\\([^\\]\\|\\`\\)\"" "\\1\\\\\"" file)
-	       "\"")))
+(defsubst wdired-normalize-filename (file unquotep)
+  (when unquotep
+    (setq file
+          ;; FIXME: shouldn't we check for a `b' argument or somesuch before
+          ;; doing such unquoting?  --Stef
+          (read (concat
+                 "\"" (replace-regexp-in-string
+                       "\\([^\\]\\|\\`\\)\"" "\\1\\\\\"" file)
+                 "\""))))
   (and file buffer-file-coding-system
        (not file-name-coding-system)
        (not default-file-name-coding-system)
@@ -329,7 +340,8 @@ non-nil means return old filename."
 	  ;; deletion.
 	  (setq end (next-single-property-change beg 'end-name))
 	  (setq file (buffer-substring-no-properties (1+ beg) end)))
-	(and file (setq file (wdired-normalize-filename file))))
+	;; Don't unquote the old name, it wasn't quoted in the first place
+        (and file (setq file (wdired-normalize-filename file (not old)))))
       (if (or no-dir old)
 	  file
 	(and file (> (length file) 0)
@@ -490,6 +502,8 @@ non-nil means return old filename."
               (require 'dired-aux)
               (condition-case err
                   (let ((dired-backup-overwrite nil))
+                    (and wdired-create-parent-directories
+                         (wdired-create-parentdirs file-new))
                     (dired-rename-file file-ori file-new
                                        overwrite))
                 (error
@@ -499,6 +513,11 @@ non-nil means return old filename."
                             err)))))))))
     errors))
 
+(defun wdired-create-parentdirs (file-new)
+  "Create parent directories for FILE-NEW if they don't exist."
+  (and (not (file-exists-p (file-name-directory file-new)))
+       (message "Creating directory for file %s" file-new)
+       (make-directory (file-name-directory file-new) t)))
 
 (defun wdired-exit ()
   "Exit wdired and return to dired mode.
@@ -627,7 +646,7 @@ If OLD, return the old target.  If MOVE, move point before it."
 	    (setq end (next-single-property-change beg 'end-link))
 	    (setq target (buffer-substring-no-properties (1+ beg) end)))
 	  (if move (goto-char (1- beg)))))
-    (and target (wdired-normalize-filename target))))
+    (and target (wdired-normalize-filename target t))))
 
 (declare-function make-symbolic-link "fileio.c")
 

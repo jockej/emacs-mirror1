@@ -2244,6 +2244,14 @@ might be shortened), and the third, optional entry is a longer
 explanation that will be displayed in a help buffer if the user
 requests more help.
 
+This function translates user input into responses by consulting
+the bindings in `query-replace-map'; see the documentation of
+that variable for more information.  In this case, the useful
+bindings are `recenter', `scroll-up', and `scroll-down'.  If the
+user enters `recenter', `scroll-up', or `scroll-down' responses,
+perform the requested window recentering or scrolling and ask
+again.
+
 The return value is the matching entry from the CHOICES list.
 
 Usage example:
@@ -2288,7 +2296,7 @@ Usage example:
                 altered-name))
             (append choices '((?? "?")))
             ", ")))
-         tchar buf wrong-char)
+         tchar buf wrong-char answer)
     (save-window-excursion
       (save-excursion
 	(while (not tchar)
@@ -2314,9 +2322,27 @@ Usage example:
                       (let ((cursor-in-echo-area t))
                         (read-char))
                     (error nil))))
+          (setq answer (lookup-key query-replace-map (vector tchar) t))
+          (setq tchar
+                (cond
+                 ((eq answer 'recenter)
+                  (recenter) t)
+                 ((eq answer 'scroll-up)
+                  (ignore-errors (scroll-up-command)) t)
+                 ((eq answer 'scroll-down)
+                  (ignore-errors (scroll-down-command)) t)
+                 ((eq answer 'scroll-other-window)
+                  (ignore-errors (scroll-other-window)) t)
+                 ((eq answer 'scroll-other-window-down)
+                  (ignore-errors (scroll-other-window-down)) t)
+                 (t tchar)))
+          (when (eq tchar t)
+            (setq wrong-char nil
+                  tchar nil))
           ;; The user has entered an invalid choice, so display the
           ;; help messages.
-	  (when (not (assq tchar choices))
+          (when (and (not (eq tchar nil))
+                     (not (assq tchar choices)))
 	    (setq wrong-char (not (memq tchar '(?? ?\C-h)))
                   tchar nil)
             (when wrong-char
@@ -2765,29 +2791,7 @@ See also `locate-user-emacs-file'.")
   "Determine the boundaries of the default tag, based on text at point.
 Return a cons cell with the beginning and end of the found tag.
 If there is no plausible default, return nil."
-  (let (from to bound)
-    (when (or (progn
-		;; Look at text around `point'.
-		(save-excursion
-		  (skip-syntax-backward "w_") (setq from (point)))
-		(save-excursion
-		  (skip-syntax-forward "w_") (setq to (point)))
-		(> to from))
-	      ;; Look between `line-beginning-position' and `point'.
-	      (save-excursion
-		(and (setq bound (line-beginning-position))
-		     (skip-syntax-backward "^w_" bound)
-		     (> (setq to (point)) bound)
-		     (skip-syntax-backward "w_")
-		     (setq from (point))))
-	      ;; Look between `point' and `line-end-position'.
-	      (save-excursion
-		(and (setq bound (line-end-position))
-		     (skip-syntax-forward "^w_" bound)
-		     (< (setq from (point)) bound)
-		     (skip-syntax-forward "w_")
-		     (setq to (point)))))
-      (cons from to))))
+  (bounds-of-thing-at-point 'symbol))
 
 (defun find-tag-default ()
   "Determine default tag to search for, based on text at point.

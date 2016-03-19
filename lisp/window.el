@@ -2473,8 +2473,6 @@ windows."
   (when (window-right window)
     (window--resize-reset-1 (window-right window) horizontal)))
 
-;; The following routine is used to manually resize the minibuffer
-;; window and is currently used, for example, by ispell.el.
 (defun window--resize-mini-window (window delta)
   "Resize minibuffer window WINDOW by DELTA pixels.
 If WINDOW cannot be resized by DELTA pixels make it as large (or
@@ -3338,34 +3336,42 @@ negative, shrink selected window by -DELTA lines or columns."
     (cond
      ((zerop delta))
      ((window-size-fixed-p nil horizontal)
-      (error "Selected window has fixed size"))
+      (user-error "Selected window has fixed size"))
      ((window-minibuffer-p)
       (if horizontal
-	  (error "Cannot resize minibuffer window horizontally")
-	(window--resize-mini-window (selected-window) delta)))
+	  (user-error "Cannot resize minibuffer window horizontally")
+	(window--resize-mini-window
+         (selected-window) (* delta (frame-char-height)))))
      ((and (not horizontal)
 	   (window-full-height-p)
 	   (eq (window-frame minibuffer-window) (selected-frame))
 	   (not resize-mini-windows))
       ;; If the selected window is full height and `resize-mini-windows'
       ;; is nil, resize the minibuffer window.
-      (window--resize-mini-window minibuffer-window (- delta)))
+      (window--resize-mini-window
+       minibuffer-window (* (- delta) (frame-char-height))))
      ((window--resizable-p nil delta horizontal)
       (window-resize nil delta horizontal))
      ((window--resizable-p nil delta horizontal 'preserved)
       (window-resize nil delta horizontal 'preserved))
-     ((eq this-command 'enlarge-window)
+     ((eq this-command
+	  (if horizontal 'enlarge-window-horizontally 'enlarge-window))
+      ;; For backward compatibility don't signal an error unless this
+      ;; command is `enlarge-window(-horizontally)'.
       (user-error "Cannot enlarge selected window"))
      (t
-      (error "Cannot enlarge selected window")))))
+      (window-resize
+       nil (if (> delta 0)
+	       (window-max-delta nil horizontal)
+	     (- (window-min-delta nil horizontal)))
+       horizontal)))))
 
 (defun shrink-window (delta &optional horizontal)
   "Make the selected window DELTA lines smaller.
 Interactively, if no argument is given, make the selected window
 one line smaller.  If optional argument HORIZONTAL is non-nil,
 make selected window narrower by DELTA columns.  If DELTA is
-negative, enlarge selected window by -DELTA lines or columns.
-Also see the `window-min-height' variable."
+negative, enlarge selected window by -DELTA lines or columns."
   (interactive "p")
   (let ((minibuffer-window (minibuffer-window)))
     (when (window-preserved-size nil horizontal)
@@ -3373,26 +3379,35 @@ Also see the `window-min-height' variable."
     (cond
      ((zerop delta))
      ((window-size-fixed-p nil horizontal)
-      (error "Selected window has fixed size"))
+      (user-error "Selected window has fixed size"))
      ((window-minibuffer-p)
       (if horizontal
-	  (error "Cannot resize minibuffer window horizontally")
-	(window--resize-mini-window (selected-window) (- delta))))
+	  (user-error "Cannot resize minibuffer window horizontally")
+	(window--resize-mini-window
+         (selected-window) (* (- delta) (frame-char-height)))))
      ((and (not horizontal)
 	   (window-full-height-p)
 	   (eq (window-frame minibuffer-window) (selected-frame))
 	   (not resize-mini-windows))
       ;; If the selected window is full height and `resize-mini-windows'
       ;; is nil, resize the minibuffer window.
-      (window--resize-mini-window minibuffer-window delta))
+      (window--resize-mini-window
+       minibuffer-window (* delta (frame-char-height))))
      ((window--resizable-p nil (- delta) horizontal)
       (window-resize nil (- delta) horizontal))
      ((window--resizable-p nil (- delta) horizontal 'preserved)
       (window-resize nil (- delta) horizontal 'preserved))
-     ((eq this-command 'shrink-window)
+     ((eq this-command
+	  (if horizontal 'shrink-window-horizontally 'shrink-window))
+      ;; For backward compatibility don't signal an error unless this
+      ;; command is `shrink-window(-horizontally)'.
       (user-error "Cannot shrink selected window"))
      (t
-      (error "Cannot shrink selected window")))))
+      (window-resize
+       nil (if (> delta 0)
+	       (- (window-min-delta nil horizontal))
+	     (window-max-delta nil horizontal))
+       horizontal)))))
 
 (defun maximize-window (&optional window)
   "Maximize WINDOW.
@@ -6720,6 +6735,71 @@ that frame."
       (prog1 (window--display-buffer buffer window 'reuse alist)
 	(unless (cdr (assq 'inhibit-switch-frame alist))
 	  (window--maybe-raise-frame (window-frame window)))))))
+
+(defun display-buffer-reuse-mode-window (buffer alist)
+  "Return a window based on the mode of the buffer it displays.
+Display BUFFER in the returned window.  Return nil if no usable
+window is found.
+
+If ALIST contains a `mode' entry, its value is a major mode (a
+symbol) or a list of modes.  A window is a candidate if it
+displays a buffer that derives from one of the given modes.  When
+ALIST contains no `mode' entry, the current major mode of BUFFER
+is used.
+
+The behaviour is also controlled by entries for
+`inhibit-same-window', `reusable-frames' and
+`inhibit-switch-frame' as is done in the function
+`display-buffer-reuse-window'."
+  (let* ((alist-entry (assq 'reusable-frames alist))
+         (alist-mode-entry (assq 'mode alist))
+	 (frames (cond (alist-entry (cdr alist-entry))
+		       ((if (eq pop-up-frames 'graphic-only)
+			    (display-graphic-p)
+			  pop-up-frames)
+			0)
+		       (display-buffer-reuse-frames 0)
+		       (t (last-nonminibuffer-frame))))
+         (inhibit-same-window-p (cdr (assq 'inhibit-same-window alist)))
+	 (windows (window-list-1 nil 'nomini frames))
+         (buffer-mode (with-current-buffer buffer major-mode))
+         (allowed-modes (if alist-mode-entry
+                            (cdr alist-mode-entry)
+                          buffer-mode))
+         (curwin (selected-window))
+         (curframe (selected-frame)))
+    (unless (listp allowed-modes)
+      (setq allowed-modes (list allowed-modes)))
+    (let (same-mode-same-frame
+          same-mode-other-frame
+          derived-mode-same-frame
+          derived-mode-other-frame)
+      (dolist (window windows)
+        (let (mode? frame?)
+          (with-current-buffer (window-buffer window)
+            (setq mode?
+                  (cond ((memq major-mode allowed-modes)
+                         'same)
+                        ((derived-mode-p allowed-modes)
+                         'derived))))
+          (when (and mode?
+                     (not (and inhibit-same-window-p
+                               (eq window curwin))))
+            (if (eq curframe (window-frame window))
+                (if (eq mode? 'same)
+                    (push window same-mode-same-frame)
+                  (push window derived-mode-same-frame))
+              (if (eq mode? 'same)
+                  (push window same-mode-other-frame)
+                (push window derived-mode-other-frame))))))
+      (let ((window (car (nconc same-mode-same-frame
+                                same-mode-other-frame
+                                derived-mode-same-frame
+                                derived-mode-other-frame))))
+        (when (window-live-p window)
+          (prog1 (window--display-buffer buffer window 'reuse alist)
+            (unless (cdr (assq 'inhibit-switch-frame alist))
+              (window--maybe-raise-frame (window-frame window)))))))))
 
 (defun display-buffer--special-action (buffer)
   "Return special display action for BUFFER, if any.

@@ -10,8 +10,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -253,14 +253,7 @@ get_boot_time_1 (const char *filename, bool newest)
   struct utmp ut, *utp;
 
   if (filename)
-    {
-      /* On some versions of IRIX, opening a nonexistent file name
-	 is likely to crash in the utmp routines.  */
-      if (faccessat (AT_FDCWD, filename, R_OK, AT_EACCESS) != 0)
-	return;
-
-      utmpname (filename);
-    }
+    utmpname (filename);
 
   setutent ();
 

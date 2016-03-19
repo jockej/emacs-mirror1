@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -41,7 +41,7 @@ typedef struct emacs_env_25 emacs_env;
    BEWARE: Do not assume NULL is a valid value!  */
 typedef struct emacs_value_tag *emacs_value;
 
-enum emacs_arity { emacs_variadic_function = -2 };
+enum { emacs_variadic_function = -2 };
 
 /* Struct passed to a module init function (emacs_module_init).  */
 struct emacs_runtime
@@ -56,13 +56,6 @@ struct emacs_runtime
   emacs_env *(*get_environment) (struct emacs_runtime *ert);
 };
 
-
-/* Function prototype for the module init function.  */
-typedef int (*emacs_init_function) (struct emacs_runtime *ert);
-
-/* Function prototype for the module Lisp functions.  */
-typedef emacs_value (*emacs_subr) (emacs_env *env, ptrdiff_t nargs,
-				   emacs_value args[], void *data);
 
 /* Possible Emacs function call outcomes.  */
 enum emacs_funcall_exit

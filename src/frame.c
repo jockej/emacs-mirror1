@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -864,6 +864,9 @@ make_initial_frame (void)
 
   /* The default value of menu-bar-mode is t.  */
   set_menu_bar_lines (f, make_number (1), Qnil);
+
+  /* Allocate glyph matrices.  */
+  adjust_frame_glyphs (f);
 
   if (!noninteractive)
     init_frame_faces (f);
@@ -5223,7 +5226,7 @@ keep it unchanged if this option is either t or a list containing
 `vertical-scroll-bars'.
 
 The default value is \\='(tool-bar-lines) on Lucid, Motif and Windows
-(which means that adding/removing a tool bar does not change the frame
+\(which means that adding/removing a tool bar does not change the frame
 height), nil on all other window systems including GTK+ (which means
 that changing any of the parameters listed above may change the size of
 the frame), and t otherwise (which means the frame size never changes
@@ -5258,6 +5261,21 @@ by `function'.  `more' is a list with additional information.
 The function `frame--size-history' displays the value of this variable
 in a more readable form.  */);
     frame_size_history = Qnil;
+
+  DEFVAR_BOOL ("tooltip-reuse-hidden-frame", tooltip_reuse_hidden_frame,
+	       doc: /* Non-nil means reuse hidden tooltip frames.
+When this is nil, delete a tooltip frame when hiding the associated
+tooltip.  When this is non-nil, make the tooltip frame invisible only,
+so it can be reused when the next tooltip is shown.
+
+Setting this to non-nil may drastically reduce the consing overhead
+incurred by creating new tooltip frames.  However, a value of non-nil
+means also that intermittent changes of faces or `default-frame-alist'
+are not applied when showing a tooltip in a reused frame.
+
+This variable is effective only with the X toolkit (and there only when
+Gtk+ tooltips are not used) and on Windows.  */);
+  tooltip_reuse_hidden_frame = false;
 
   staticpro (&Vframe_list);
 

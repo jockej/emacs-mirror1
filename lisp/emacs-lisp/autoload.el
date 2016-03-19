@@ -87,7 +87,7 @@ that text will be copied verbatim to `generated-autoload-file'.")
 (defconst generate-autoload-section-continuation ";;;;;; "
   "String to add on each continuation of the section header form.")
 
-(defvar autoload-timestamps t
+(defvar autoload-timestamps nil		; experimental, see bug#22213
   "Non-nil means insert a timestamp for each input file into the output.
 We use these in incremental updates of the output file to decide
 if we need to rescan an input file.  If you set this to nil,
@@ -674,6 +674,8 @@ FILE's modification time."
       (let ((version-control 'never))
 	(save-buffer)))))
 
+;; FIXME This command should be deprecated.
+;; See http://debbugs.gnu.org/22213#41
 ;;;###autoload
 (defun update-file-autoloads (file &optional save-after outfile)
   "Update the autoloads for FILE.
@@ -691,6 +693,9 @@ Return FILE if there was no autoload cookie in it, else nil."
 		     (read-file-name "Write autoload definitions to file: ")))
   (let* ((generated-autoload-file (or outfile generated-autoload-file))
 	 (autoload-modified-buffers nil)
+	 ;; We need this only if the output file handles more than one input.
+	 ;; See http://debbugs.gnu.org/22213#38 and subsequent.
+	 (autoload-timestamps t)
          (no-autoloads (autoload-generate-file-autoloads file)))
     (if autoload-modified-buffers
         (if save-after (autoload-save-buffers))
@@ -739,7 +744,7 @@ removes any prior now out-of-date autoload entries."
                                ;; last-time is the time-stamp (specifying
                                ;; the last time we looked at the file) and
                                ;; the file hasn't been changed since.
-                               ((listp last-time) (= (length last-time) 2)
+                               ((listp last-time)
                                 (not (time-less-p last-time file-time)))
                                ;; FIXME? Arguably we should throw a
                                ;; user error, or some kind of warning,

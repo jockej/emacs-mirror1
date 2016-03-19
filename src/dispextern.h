@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -1973,8 +1973,8 @@ struct bidi_it {
 				   resolving weak and neutral types */
   bidi_type_t type_after_wn;	/* bidi type after overrides and Wn */
   bidi_type_t orig_type;	/* original bidi type, as found in the buffer */
-  char resolved_level;		/* final resolved level of this character */
-  char isolate_level;		/* count of isolate initiators unmatched by PDI */
+  signed char resolved_level;	/* final resolved level of this character */
+  signed char isolate_level;	/* count of isolate initiators unmatched by PDI */
   ptrdiff_t invalid_levels;	/* how many PDFs to ignore */
   ptrdiff_t invalid_isolates;	/* how many PDIs to ignore */
   struct bidi_saved_info prev;	/* info about previous character */

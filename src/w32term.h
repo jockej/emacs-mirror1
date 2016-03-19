@@ -5,8 +5,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -727,10 +727,18 @@ extern void x_delete_display (struct w32_display_info *dpyinfo);
 
 extern void x_query_color (struct frame *, XColor *);
 
-extern volatile int notification_buffer_in_use;
-extern BYTE file_notifications[16384];
-extern DWORD notifications_size;
-extern void *notifications_desc;
+#define FILE_NOTIFICATIONS_SIZE 16384
+/* Notifications come in sets.  We use a doubly linked list with a
+   sentinel to communicate those sets from the watching threads to the
+   main thread.  */
+struct notifications_set {
+  LPBYTE notifications;
+  DWORD size;
+  void *desc;
+  struct notifications_set *next;
+  struct notifications_set *prev;
+};
+extern struct notifications_set *notifications_set_head;
 extern Lisp_Object w32_get_watch_object (void *);
 extern Lisp_Object lispy_file_action (DWORD);
 extern int handle_file_notifications (struct input_event *);
@@ -738,11 +746,15 @@ extern int handle_file_notifications (struct input_event *);
 extern void w32_initialize_display_info (Lisp_Object);
 extern void initialize_w32_display (struct terminal *, int *, int *);
 
+#ifdef WINDOWSNT
 /* Keyboard hooks.  */
 extern void setup_w32_kbdhook (void);
 extern void remove_w32_kbdhook (void);
 extern int check_w32_winkey_state (int);
 #define w32_kbdhook_active (os_subtype != OS_9X)
+#else
+#define w32_kbdhook_active 0
+#endif
 
 /* Keypad command key support.  W32 doesn't have virtual keys defined
    for the function keys on the keypad (they are mapped to the standard

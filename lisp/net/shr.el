@@ -1178,7 +1178,9 @@ ones, in case fg and bg are nil."
      ((equal dir "ltr")
       (setq bidi-paragraph-direction 'left-to-right))
      ((equal dir "rtl")
-      (setq bidi-paragraph-direction 'right-to-left))))
+      (setq bidi-paragraph-direction 'right-to-left))
+     ((equal dir "auto")
+      (setq bidi-paragraph-direction nil))))
   (shr-generic dom))
 
 (defun shr-tag-body (dom)
@@ -1257,7 +1259,7 @@ ones, in case fg and bg are nil."
   (shr-ensure-paragraph))
 
 (defun shr-tag-div (dom)
-  (shr-ensure-newline)
+  (shr-ensure-paragraph)
   (shr-generic dom)
   (shr-ensure-newline))
 
@@ -1497,7 +1499,7 @@ The preference is a float determined from `shr-prefer-media-type'."
           (insert " ")
 	  (url-queue-retrieve
 	   (shr-encode-url url) 'shr-image-fetched
-	   (list (current-buffer) start (set-marker (make-marker) (1- (point)))
+	   (list (current-buffer) start (set-marker (make-marker) (point))
                  (list :width width :height height))
 	   t t)))
 	(when (zerop shr-table-depth) ;; We are not in a table.
@@ -1678,6 +1680,24 @@ The preference is a float determined from `shr-prefer-media-type'."
     (when color
       (shr-colorize-region start (point) color
 			   (cdr (assq 'background-color shr-stylesheet))))))
+
+(defun shr-tag-bdo (dom)
+  (let* ((direction (dom-attr dom 'dir))
+         (char (cond
+                ((equal direction "ltr")
+                 #x202d)                ; LRO
+                ((equal direction "rtl")
+                 #x202e))))             ; RLO
+    (when char
+      (insert #x2068 char))             ; FSI + LRO/RLO
+    (shr-generic dom)
+    (when char
+      (insert #x202c #x2069))))         ; PDF + PDI
+
+(defun shr-tag-bdi (dom)
+  (insert #x2068)                       ; FSI
+  (shr-generic dom)
+  (insert #x2069))                      ; PDI
 
 ;;; Table rendering algorithm.
 
@@ -1911,7 +1931,8 @@ The preference is a float determined from `shr-prefer-media-type'."
            (let ((background nil))
              (dolist (elem face)
                (when (and (consp elem)
-                          (eq (car elem) :background))
+                          (eq (car elem) :background)
+                          (not background))
                  (setq background (cadr elem))))
              (and background
                   (list :background background))))))

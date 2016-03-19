@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -28,6 +28,10 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "lisp.h"
 #include "keyboard.h"
 #include "process.h"
+
+#ifdef HAVE_SYS_RESOURCE_H
+#include <sys/resource.h>
+#endif /* HAVE_SYS_RESOURCE_H  */
 
 
 /* File handle for kqueue.  */
@@ -67,9 +71,8 @@ kqueue_directory_listing (Lisp_Object directory_files)
 
 /* Generate a file notification event.  */
 static void
-kqueue_generate_event
-(Lisp_Object watch_object, Lisp_Object actions,
- Lisp_Object file, Lisp_Object file1)
+kqueue_generate_event (Lisp_Object watch_object, Lisp_Object actions,
+		       Lisp_Object file, Lisp_Object file1)
 {
   Lisp_Object flags, action, entry;
   struct input_event event;
@@ -109,8 +112,7 @@ kqueue_generate_event
    replaced by the new directory listing at the end of this
    function.  */
 static void
-kqueue_compare_dir_list
-(Lisp_Object watch_object)
+kqueue_compare_dir_list (Lisp_Object watch_object)
 {
   Lisp_Object dir, pending_dl, deleted_dl;
   Lisp_Object old_directory_files, old_dl, new_directory_files, new_dl, dl;
@@ -368,9 +370,12 @@ only when the upper directory of the renamed file is watched.  */)
   (Lisp_Object file, Lisp_Object flags, Lisp_Object callback)
 {
   Lisp_Object watch_object, dir_list;
-  int fd, oflags;
+  int maxfd, fd, oflags;
   u_short fflags = 0;
   struct kevent kev;
+#ifdef HAVE_GETRLIMIT
+  struct rlimit rlim;
+#endif /* HAVE_GETRLIMIT  */
 
   /* Check parameters.  */
   CHECK_STRING (file);
@@ -382,6 +387,21 @@ only when the upper directory of the renamed file is watched.  */)
 
   if (! FUNCTIONP (callback))
     wrong_type_argument (Qinvalid_function, callback);
+
+  /* Check available file descriptors.  */
+#ifdef HAVE_GETRLIMIT
+  if (! getrlimit (RLIMIT_NOFILE, &rlim))
+    maxfd = rlim.rlim_cur;
+  else
+#endif /* HAVE_GETRLIMIT  */
+    maxfd = 256;
+
+  /* We assume 50 file descriptors are sufficient for the rest of Emacs.  */
+  if ((maxfd - 50) < XINT (Flength (watch_list)))
+    xsignal2
+      (Qfile_notify_error,
+       build_string ("File watching not possible, no file descriptor left"),
+       Flength (watch_list));
 
   if (kqueuefd < 0)
     {

@@ -12,8 +12,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -6814,39 +6814,29 @@ decode_eol (struct coding_system *coding)
   else if (EQ (eol_type, Qdos))
     {
       ptrdiff_t n = 0;
+      ptrdiff_t pos = coding->dst_pos;
+      ptrdiff_t pos_byte = coding->dst_pos_byte;
+      ptrdiff_t pos_end = pos_byte + coding->produced - 1;
 
-      if (NILP (coding->dst_object))
-	{
-	  /* Start deleting '\r' from the tail to minimize the memory
-	     movement.  */
-	  for (p = pend - 2; p >= pbeg; p--)
-	    if (*p == '\r')
-	      {
-		memmove (p, p + 1, pend-- - p - 1);
-		n++;
-	      }
-	}
-      else
-	{
-	  ptrdiff_t pos = coding->dst_pos;
-	  ptrdiff_t pos_byte = coding->dst_pos_byte;
-	  ptrdiff_t pos_end = pos_byte + coding->produced - 1;
+      /* This assertion is here instead of code, now deleted, that
+	 handled the NILP case, which no longer happens with the
+	 current codebase.  */
+      eassert (!NILP (coding->dst_object));
 
-	  while (pos_byte < pos_end)
+      while (pos_byte < pos_end)
+	{
+	  p = BYTE_POS_ADDR (pos_byte);
+	  if (*p == '\r' && p[1] == '\n')
 	    {
-	      p = BYTE_POS_ADDR (pos_byte);
-	      if (*p == '\r' && p[1] == '\n')
-		{
-		  del_range_2 (pos, pos_byte, pos + 1, pos_byte + 1, 0);
-		  n++;
-		  pos_end--;
-		}
-	      pos++;
-	      if (coding->dst_multibyte)
-		pos_byte += BYTES_BY_CHAR_HEAD (*p);
-	      else
-		pos_byte++;
+	      del_range_2 (pos, pos_byte, pos + 1, pos_byte + 1, 0);
+	      n++;
+	      pos_end--;
 	    }
+	  pos++;
+	  if (coding->dst_multibyte)
+	    pos_byte += BYTES_BY_CHAR_HEAD (*p);
+	  else
+	    pos_byte++;
 	}
       coding->produced -= n;
       coding->produced_char -= n;
@@ -9800,7 +9790,7 @@ DEFUN ("find-operation-coding-system", Ffind_operation_coding_system,
        doc: /* Choose a coding system for an operation based on the target name.
 The value names a pair of coding systems: (DECODING-SYSTEM . ENCODING-SYSTEM).
 DECODING-SYSTEM is the coding system to use for decoding
-(in case OPERATION does decoding), and ENCODING-SYSTEM is the coding system
+\(in case OPERATION does decoding), and ENCODING-SYSTEM is the coding system
 for encoding (in case OPERATION does encoding).
 
 The first argument OPERATION specifies an I/O primitive:
@@ -11175,7 +11165,7 @@ the cdr part is used for encoding a text to be sent to a process.  */);
 Table of extra Latin codes in the range 128..159 (inclusive).
 This is a vector of length 256.
 If Nth element is non-nil, the existence of code N in a file
-(or output of subprocess) doesn't prevent it to be detected as
+\(or output of subprocess) doesn't prevent it to be detected as
 a coding system of ISO 2022 variant which has a flag
 `accept-latin-extra-code' t (e.g. iso-latin-1) on reading a file
 or reading output of a subprocess.

@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -185,6 +185,13 @@ extern struct tm * sys_localtime (const time_t *);
    supply the 2nd arg correctly, so don't use _setjmp directly in that
    case.  */
 #undef HAVE__SETJMP
+
+/* Unlike MS and mingw.org, MinGW64 doesn't define gai_strerror as an
+   inline function in a system header file, and instead seems to
+   require to link against ws2_32.a.  But we don't want to link with
+   -lws2_32, as that would make Emacs dependent on the respective DLL.
+   So MinGW64 is amply punished here by the following:  */
+#undef HAVE_GAI_STRERROR
 #endif
 
 /* The following is needed for recovery from C stack overflows.  */

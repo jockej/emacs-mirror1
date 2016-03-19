@@ -7,8 +7,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -75,11 +75,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 # include <sys/stropts.h>
 #endif
 
-#ifdef HAVE_RES_INIT
-#include <arpa/nameser.h>
-#include <resolv.h>
-#endif
-
 #ifdef HAVE_UTIL_H
 #include <util.h>
 #endif
@@ -123,6 +118,11 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #ifndef WINDOWSNT
 #include <glib.h>
 #endif
+#endif
+
+#if defined HAVE_GETADDRINFO_A || defined HAVE_GNUTLS
+/* This is 0.1s in nanoseconds. */
+#define ASYNC_RETRY_NSEC 100000000
 #endif
 
 #ifdef WINDOWSNT
@@ -845,8 +845,19 @@ nil, indicating the current buffer's process.  */)
 #ifdef HAVE_GETADDRINFO_A
   if (p->dns_request)
     {
-      gai_cancel (p->dns_request);
-      free_dns_request (process);
+      /* Cancel the request.  Unless shutting down, wait until
+	 completion.  Free the request if completely canceled. */
+
+      bool canceled = gai_cancel (p->dns_request) != EAI_NOTCANCELED;
+      if (!canceled && !inhibit_sentinels)
+	{
+	  struct gaicb const *req = p->dns_request;
+	  while (gai_suspend (&req, 1, NULL) != 0)
+	    continue;
+	  canceled = true;
+	}
+      if (canceled)
+	free_dns_request (process);
     }
 #endif
 
@@ -971,7 +982,7 @@ DEFUN ("process-command", Fprocess_command, Sprocess_command, 1, 1, 0,
 This is a list of strings, the first string being the program executed
 and the rest of the strings being the arguments given to it.
 For a network or serial process, this is nil (process is running) or t
-(process is stopped).  */)
+\(process is stopped).  */)
   (register Lisp_Object process)
 {
   CHECK_PROCESS (process);
@@ -2715,7 +2726,7 @@ is not given or nil, 1 stopbit is used.
 :flowcontrol FLOWCONTROL -- FLOWCONTROL determines the type of
 flowcontrol to be used, which is either nil (don't use flowcontrol),
 the symbol `hw' (use RTS/CTS hardware flowcontrol), or the symbol `sw'
-(use XON/XOFF software flowcontrol).  If FLOWCONTROL is not given, no
+\(use XON/XOFF software flowcontrol).  If FLOWCONTROL is not given, no
 flowcontrol is used.
 
 `serial-process-configure' is called by `make-serial-process' for the
@@ -2723,12 +2734,12 @@ initial configuration of the serial port.
 
 Examples:
 
-(serial-process-configure :process "/dev/ttyS0" :speed 1200)
+\(serial-process-configure :process "/dev/ttyS0" :speed 1200)
 
-(serial-process-configure
+\(serial-process-configure
     :buffer "COM1" :stopbits 1 :parity \\='odd :flowcontrol \\='hw)
 
-(serial-process-configure :port "\\\\.\\COM13" :bytesize 7)
+\(serial-process-configure :port "\\\\.\\COM13" :bytesize 7)
 
 usage: (serial-process-configure &rest ARGS)  */)
   (ptrdiff_t nargs, Lisp_Object *args)
@@ -2822,13 +2833,13 @@ is available via the function `process-contact'.
 
 Examples:
 
-(make-serial-process :port "/dev/ttyS0" :speed 9600)
+\(make-serial-process :port "/dev/ttyS0" :speed 9600)
 
-(make-serial-process :port "COM1" :speed 115200 :stopbits 2)
+\(make-serial-process :port "COM1" :speed 115200 :stopbits 2)
 
-(make-serial-process :port "\\\\.\\COM13" :speed 1200 :bytesize 7 :parity \\='odd)
+\(make-serial-process :port "\\\\.\\COM13" :speed 1200 :bytesize 7 :parity \\='odd)
 
-(make-serial-process :port "/dev/tty.BlueConsole-SPP-1" :speed nil)
+\(make-serial-process :port "/dev/tty.BlueConsole-SPP-1" :speed nil)
 
 usage:  (make-serial-process &rest ARGS)  */)
   (ptrdiff_t nargs, Lisp_Object *args)
@@ -3414,21 +3425,6 @@ connect_network_socket (Lisp_Object proc, Lisp_Object ip_addresses)
 
 }
 
-#ifndef HAVE_GETADDRINFO
-static Lisp_Object
-conv_numerical_to_lisp (unsigned char *number, int length, int port)
-{
-  Lisp_Object address = Fmake_vector (make_number (length + 1), Qnil);
-  struct Lisp_Vector *p = XVECTOR (address);
-
-  p->contents[length] = make_number (port);
-  for (int i = 0; i < length; i++)
-    p->contents[i] = make_number (number[i]);
-
-  return address;
-}
-#endif
-
 /* Create a network stream/datagram client/server process.  Treated
    exactly like a normal process when reading and writing.  Primary
    differences are in status display and process deletion.  A network
@@ -3464,9 +3460,8 @@ host, and only clients connecting to that address will be accepted.
 
 :service SERVICE -- SERVICE is name of the service desired, or an
 integer specifying a port number to connect to.  If SERVICE is t,
-a random port number is selected for the server.  (If Emacs was
-compiled with getaddrinfo, a port number can also be specified as a
-string, e.g. "80", as well as an integer.  This is not portable.)
+a random port number is selected for the server.  A port number can
+be specified as an integer string, e.g., "80", as well as an integer.
 
 :type TYPE -- TYPE is the type of connection.  The default (nil) is a
 stream type connection, `datagram' creates a datagram type connection,
@@ -3599,11 +3594,9 @@ usage: (make-network-process &rest ARGS)  */)
   Lisp_Object proc;
   Lisp_Object contact;
   struct Lisp_Process *p;
-#if defined HAVE_GETADDRINFO || defined HAVE_GETADDRINFO_A
   const char *portstring;
   ptrdiff_t portstringlen ATTRIBUTE_UNUSED;
   char portbuf[INT_BUFSIZE_BOUND (EMACS_INT)];
-#endif
 #ifdef HAVE_LOCAL_SOCKETS
   struct sockaddr_un address_un;
 #endif
@@ -3674,7 +3667,7 @@ usage: (make-network-process &rest ARGS)  */)
   tem = Fplist_get (contact, QCfamily);
   if (NILP (tem))
     {
-#if defined (HAVE_GETADDRINFO) && defined (AF_INET6)
+#ifdef AF_INET6
       family = AF_UNSPEC;
 #else
       family = AF_INET;
@@ -3746,7 +3739,6 @@ usage: (make-network-process &rest ARGS)  */)
     }
 #endif
 
-#if defined HAVE_GETADDRINFO || defined HAVE_GETADDRINFO_A
   if (!NILP (host))
     {
       /* SERVICE can either be a string or int.
@@ -3768,7 +3760,6 @@ usage: (make-network-process &rest ARGS)  */)
 	  portstringlen = SBYTES (service);
 	}
     }
-#endif
 
 #ifdef HAVE_GETADDRINFO_A
   if (!NILP (host) && !NILP (Fplist_get (contact, QCnowait)))
@@ -3800,7 +3791,6 @@ usage: (make-network-process &rest ARGS)  */)
     }
 #endif /* HAVE_GETADDRINFO_A */
 
-#ifdef HAVE_GETADDRINFO
   /* If we have a host, use getaddrinfo to resolve both host and service.
      Otherwise, use getservbyname to lookup the service.  */
 
@@ -3812,10 +3802,6 @@ usage: (make-network-process &rest ARGS)  */)
       immediate_quit = 1;
       QUIT;
 
-#ifdef HAVE_RES_INIT
-      res_init ();
-#endif
-
       struct addrinfo hints;
       memset (&hints, 0, sizeof hints);
       hints.ai_family = family;
@@ -3824,7 +3810,14 @@ usage: (make-network-process &rest ARGS)  */)
       ret = getaddrinfo (SSDATA (host), portstring, &hints, &res);
       if (ret)
 #ifdef HAVE_GAI_STRERROR
-	error ("%s/%s %s", SSDATA (host), portstring, gai_strerror (ret));
+	{
+	  synchronize_system_messages_locale ();
+	  char const *str = gai_strerror (ret);
+	  if (! NILP (Vlocale_coding_system))
+	    str = SSDATA (code_convert_string_norecord
+			  (build_string (str), Vlocale_coding_system, 0));
+	  error ("%s/%s %s", SSDATA (host), portstring, str);
+	}
 #else
 	error ("%s/%s getaddrinfo error %d", SSDATA (host), portstring, ret);
 #endif
@@ -3844,10 +3837,8 @@ usage: (make-network-process &rest ARGS)  */)
 
       goto open_socket;
     }
-#endif /* HAVE_GETADDRINFO */
 
-  /* We end up here if getaddrinfo is not defined, or in case no hostname
-     has been specified (e.g. for a local server process).  */
+  /* No hostname has been specified (e.g., a local server process).  */
 
   if (EQ (service, Qt))
     port = 0;
@@ -3882,47 +3873,6 @@ usage: (make-network-process &rest ARGS)  */)
       AUTO_STRING (unknown_service, "Unknown service: %s");
       xsignal1 (Qerror, CALLN (Fformat, unknown_service, service));
     }
-
-#ifndef HAVE_GETADDRINFO
-  if (!NILP (host))
-    {
-      struct hostent *host_info_ptr;
-      unsigned char *addr;
-      int addrlen;
-
-      /* gethostbyname may fail with TRY_AGAIN, but we don't honor that,
-	 as it may `hang' Emacs for a very long time.  */
-      immediate_quit = 1;
-      QUIT;
-
-#ifdef HAVE_RES_INIT
-      res_init ();
-#endif
-
-      host_info_ptr = gethostbyname ((const char *) SDATA (host));
-      immediate_quit = 0;
-
-      if (host_info_ptr)
-	{
-	  addr = (unsigned char *) host_info_ptr->h_addr;
-	  addrlen = host_info_ptr->h_length;
-	}
-      else
-	/* Attempt to interpret host as numeric inet address.  This
-	   only works for IPv4 addresses. */
-	{
-	  unsigned long numeric_addr = inet_addr (SSDATA (host));
-
-	  if (numeric_addr == -1)
-	    error ("Unknown host \"%s\"", SDATA (host));
-
-	  addr = (unsigned char *) &numeric_addr;
-	  addrlen = 4;
-	}
-
-      ip_addresses = list1 (conv_numerical_to_lisp (addr, addrlen, port));
-    }
-#endif /* not HAVE_GETADDRINFO */
 
  open_socket:
 
@@ -3985,21 +3935,17 @@ usage: (make-network-process &rest ARGS)  */)
     }
 
 #ifdef HAVE_GETADDRINFO_A
-  /* If we're doing async address resolution, the list of addresses
-     here will be nil, so we postpone connecting to the server. */
+  /* With async address resolution, the list of addresses is empty, so
+     postpone connecting to the server. */
   if (!p->is_server && NILP (ip_addresses))
     {
       p->dns_request = dns_request;
       p->status = Qconnect;
+      return proc;
     }
-  else
-    {
-      connect_network_socket (proc, ip_addresses);
-    }
-#else /* HAVE_GETADDRINFO_A */
-  connect_network_socket (proc, ip_addresses);
 #endif
 
+  connect_network_socket (proc, ip_addresses);
   return proc;
 }
 
@@ -4710,13 +4656,12 @@ check_for_dns (Lisp_Object proc)
 {
   struct Lisp_Process *p = XPROCESS (proc);
   Lisp_Object ip_addresses = Qnil;
-  int ret = 0;
 
   /* Sanity check. */
   if (! p->dns_request)
     return Qnil;
 
-  ret = gai_error (p->dns_request);
+  int ret = gai_error (p->dns_request);
   if (ret == EAI_INPROGRESS)
     return Qt;
 
@@ -4868,6 +4813,9 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
   struct timespec got_output_end_time = invalid_timespec ();
   enum { MINIMUM = -1, TIMEOUT, INFINITY } wait;
   int got_some_output = -1;
+#if defined HAVE_GETADDRINFO_A || defined HAVE_GNUTLS
+  bool retry_for_async;
+#endif
   ptrdiff_t count = SPECPDL_INDEX ();
 
   /* Close to the current time if known, an invalid timespec otherwise.  */
@@ -4920,6 +4868,7 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
 	Lisp_Object process_list_head, aproc;
 	struct Lisp_Process *p;
 
+	retry_for_async = false;
 	FOR_EACH_PROCESS(process_list_head, aproc)
 	  {
 	    p = XPROCESS (aproc);
@@ -4933,6 +4882,8 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
 		    Lisp_Object ip_addresses = check_for_dns (aproc);
 		    if (!NILP (ip_addresses) && !EQ (ip_addresses, Qt))
 		      connect_network_socket (aproc, ip_addresses);
+		    else
+		      retry_for_async = true;
 		  }
 #endif
 #ifdef HAVE_GNUTLS
@@ -4948,12 +4899,16 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
 			gnutls_verify_boot (aproc, Qnil);
 			finish_after_tls_connection (aproc);
 		      }
-		    else if (p->gnutls_handshakes_tried
-			     > GNUTLS_EMACS_HANDSHAKES_LIMIT)
+		    else
 		      {
-			deactivate_process (aproc);
-			pset_status (p, list2 (Qfailed,
-					       build_string ("TLS negotiation failed")));
+			retry_for_async = true;
+			if (p->gnutls_handshakes_tried
+			    > GNUTLS_EMACS_HANDSHAKES_LIMIT)
+			  {
+			    deactivate_process (aproc);
+			    pset_status (p, list2 (Qfailed,
+						   build_string ("TLS negotiation failed")));
+			  }
 		      }
 		  }
 #endif
@@ -5219,6 +5174,15 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
 	  /* NOW can become inaccurate if time can pass during pselect.  */
 	  if (timeout.tv_sec > 0 || timeout.tv_nsec > 0)
 	    now = invalid_timespec ();
+
+#if defined HAVE_GETADDRINFO_A || defined HAVE_GNUTLS
+	  if (retry_for_async
+	      && (timeout.tv_sec > 0 || timeout.tv_nsec > ASYNC_RETRY_NSEC))
+	    {
+	      timeout.tv_sec = 0;
+	      timeout.tv_nsec = ASYNC_RETRY_NSEC;
+	    }
+#endif
 
 #if defined (HAVE_NS)
           nfds = ns_select
@@ -6438,7 +6402,7 @@ process_send_signal (Lisp_Object process, int signo, Lisp_Object current_group,
 	  break;
 
   	case SIGTSTP:
-#if defined (VSWTCH) && !defined (PREFER_VSUSP)
+#ifdef VSWTCH
 	  sig_char = &t.c_cc[VSWTCH];
 #else
 	  sig_char = &t.c_cc[VSUSP];

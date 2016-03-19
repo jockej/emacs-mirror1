@@ -6,8 +6,8 @@ This file is part of GNU Emacs.
 
 GNU Emacs is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
 GNU Emacs is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -64,6 +64,13 @@ enum
 	 && INTPTR_MAX == EMACS_INT_MAX)
   };
 
+/* Function prototype for the module init function.  */
+typedef int (*emacs_init_function) (struct emacs_runtime *);
+
+/* Function prototype for the module Lisp functions.  */
+typedef emacs_value (*emacs_subr) (emacs_env *, ptrdiff_t,
+				   emacs_value [], void *);
+
 /* Function prototype for module user-pointer finalizers.  These
    should not throw C++ exceptions, so emacs-module.h declares the
    corresponding interfaces with EMACS_NOEXCEPT.  There is only C code
@@ -107,14 +114,12 @@ static enum emacs_funcall_exit module_non_local_exit_check (emacs_env *);
 static void check_main_thread (void);
 static void finalize_environment (struct emacs_env_private *);
 static void initialize_environment (emacs_env *, struct emacs_env_private *priv);
-static void module_args_out_of_range (emacs_env *, Lisp_Object, Lisp_Object);
 static void module_handle_signal (emacs_env *, Lisp_Object);
 static void module_handle_throw (emacs_env *, Lisp_Object);
 static void module_non_local_exit_signal_1 (emacs_env *, Lisp_Object, Lisp_Object);
 static void module_non_local_exit_throw_1 (emacs_env *, Lisp_Object, Lisp_Object);
 static void module_out_of_memory (emacs_env *);
 static void module_reset_handlerlist (const int *);
-static void module_wrong_type (emacs_env *, Lisp_Object, Lisp_Object);
 
 /* We used to return NULL when emacs_value was a different type from
    Lisp_Object, but nowadays we just use Qnil instead.  Although they
@@ -243,6 +248,12 @@ struct module_fun_env
     return error_retval;                                                \
   MODULE_HANDLE_NONLOCAL_EXIT (error_retval)
 
+static void
+CHECK_USER_PTR (Lisp_Object obj)
+{
+  CHECK_TYPE (USER_PTRP (obj), Quser_ptrp, obj);
+}
+
 /* Catch signals and throws only if the code can actually signal or
    throw.  If checking is enabled, abort if the current thread is not
    the Emacs main thread.  */
@@ -270,11 +281,8 @@ module_make_global_ref (emacs_env *env, emacs_value ref)
     {
       Lisp_Object value = HASH_VALUE (h, i);
       EMACS_INT refcount = XFASTINT (value) + 1;
-      if (refcount > MOST_POSITIVE_FIXNUM)
-        {
-          module_non_local_exit_signal_1 (env, Qoverflow_error, Qnil);
-          return module_nil;
-        }
+      if (MOST_POSITIVE_FIXNUM < refcount)
+	xsignal0 (Qoverflow_error);
       value = make_natnum (refcount);
       set_hash_value_slot (h, i, value);
     }
@@ -414,6 +422,8 @@ module_funcall (emacs_env *env, emacs_value fun, ptrdiff_t nargs,
      first arg, because that's what Ffuncall takes.  */
   Lisp_Object *newargs;
   USE_SAFE_ALLOCA;
+  if (nargs == PTRDIFF_MAX)
+    xsignal0 (Qoverflow_error);
   SAFE_ALLOCA_LISP (newargs, nargs + 1);
   newargs[0] = value_to_lisp (fun);
   for (ptrdiff_t i = 0; i < nargs; i++)
@@ -460,11 +470,7 @@ module_extract_integer (emacs_env *env, emacs_value n)
 {
   MODULE_FUNCTION_BEGIN (0);
   Lisp_Object l = value_to_lisp (n);
-  if (! INTEGERP (l))
-    {
-      module_wrong_type (env, Qintegerp, l);
-      return 0;
-    }
+  CHECK_NUMBER (l);
   return XINT (l);
 }
 
@@ -472,11 +478,8 @@ static emacs_value
 module_make_integer (emacs_env *env, intmax_t n)
 {
   MODULE_FUNCTION_BEGIN (module_nil);
-  if (! (MOST_NEGATIVE_FIXNUM <= n && n <= MOST_POSITIVE_FIXNUM))
-    {
-      module_non_local_exit_signal_1 (env, Qoverflow_error, Qnil);
-      return module_nil;
-    }
+  if (FIXNUM_OVERFLOW_P (n))
+    xsignal0 (Qoverflow_error);
   return lisp_to_value (make_number (n));
 }
 
@@ -485,11 +488,7 @@ module_extract_float (emacs_env *env, emacs_value f)
 {
   MODULE_FUNCTION_BEGIN (0);
   Lisp_Object lisp = value_to_lisp (f);
-  if (! FLOATP (lisp))
-    {
-      module_wrong_type (env, Qfloatp, lisp);
-      return 0;
-    }
+  CHECK_TYPE (FLOATP (lisp), Qfloatp, lisp);
   return XFLOAT_DATA (lisp);
 }
 
@@ -506,19 +505,10 @@ module_copy_string_contents (emacs_env *env, emacs_value value, char *buffer,
 {
   MODULE_FUNCTION_BEGIN (false);
   Lisp_Object lisp_str = value_to_lisp (value);
-  if (! STRINGP (lisp_str))
-    {
-      module_wrong_type (env, Qstringp, lisp_str);
-      return false;
-    }
+  CHECK_STRING (lisp_str);
 
   Lisp_Object lisp_str_utf8 = ENCODE_UTF_8 (lisp_str);
   ptrdiff_t raw_size = SBYTES (lisp_str_utf8);
-  if (raw_size == PTRDIFF_MAX)
-    {
-      module_non_local_exit_signal_1 (env, Qoverflow_error, Qnil);
-      return false;
-    }
   ptrdiff_t required_buf_size = raw_size + 1;
 
   eassert (length != NULL);
@@ -534,8 +524,7 @@ module_copy_string_contents (emacs_env *env, emacs_value value, char *buffer,
   if (*length < required_buf_size)
     {
       *length = required_buf_size;
-      module_non_local_exit_signal_1 (env, Qargs_out_of_range, Qnil);
-      return false;
+      xsignal0 (Qargs_out_of_range);
     }
 
   *length = required_buf_size;
@@ -548,11 +537,6 @@ static emacs_value
 module_make_string (emacs_env *env, const char *str, ptrdiff_t length)
 {
   MODULE_FUNCTION_BEGIN (module_nil);
-  if (length > STRING_BYTES_BOUND)
-    {
-      module_non_local_exit_signal_1 (env, Qoverflow_error, Qnil);
-      return module_nil;
-    }
   Lisp_Object lstr = make_unibyte_string (str, length);
   return lisp_to_value (code_convert_string_norecord (lstr, Qutf_8, false));
 }
@@ -569,11 +553,7 @@ module_get_user_ptr (emacs_env *env, emacs_value uptr)
 {
   MODULE_FUNCTION_BEGIN (NULL);
   Lisp_Object lisp = value_to_lisp (uptr);
-  if (! USER_PTRP (lisp))
-    {
-      module_wrong_type (env, Quser_ptr, lisp);
-      return NULL;
-    }
+  CHECK_USER_PTR (lisp);
   return XUSER_PTR (lisp)->p;
 }
 
@@ -582,12 +562,8 @@ module_set_user_ptr (emacs_env *env, emacs_value uptr, void *ptr)
 {
   /* FIXME: This function should return bool because it can fail.  */
   MODULE_FUNCTION_BEGIN ();
-  check_main_thread ();
-  if (module_non_local_exit_check (env) != emacs_funcall_exit_return)
-    return;
   Lisp_Object lisp = value_to_lisp (uptr);
-  if (! USER_PTRP (lisp))
-    module_wrong_type (env, Quser_ptr, lisp);
+  CHECK_USER_PTR (lisp);
   XUSER_PTR (lisp)->p = ptr;
 }
 
@@ -596,11 +572,7 @@ module_get_user_finalizer (emacs_env *env, emacs_value uptr)
 {
   MODULE_FUNCTION_BEGIN (NULL);
   Lisp_Object lisp = value_to_lisp (uptr);
-  if (! USER_PTRP (lisp))
-    {
-      module_wrong_type (env, Quser_ptr, lisp);
-      return NULL;
-    }
+  CHECK_USER_PTR (lisp);
   return XUSER_PTR (lisp)->finalizer;
 }
 
@@ -611,8 +583,7 @@ module_set_user_finalizer (emacs_env *env, emacs_value uptr,
   /* FIXME: This function should return bool because it can fail.  */
   MODULE_FUNCTION_BEGIN ();
   Lisp_Object lisp = value_to_lisp (uptr);
-  if (! USER_PTRP (lisp))
-    module_wrong_type (env, Quser_ptr, lisp);
+  CHECK_USER_PTR (lisp);
   XUSER_PTR (lisp)->finalizer = fin;
 }
 
@@ -622,19 +593,8 @@ module_vec_set (emacs_env *env, emacs_value vec, ptrdiff_t i, emacs_value val)
   /* FIXME: This function should return bool because it can fail.  */
   MODULE_FUNCTION_BEGIN ();
   Lisp_Object lvec = value_to_lisp (vec);
-  if (! VECTORP (lvec))
-    {
-      module_wrong_type (env, Qvectorp, lvec);
-      return;
-    }
-  if (! (0 <= i && i < ASIZE (lvec)))
-    {
-      if (MOST_NEGATIVE_FIXNUM <= i && i <= MOST_POSITIVE_FIXNUM)
-	module_args_out_of_range (env, lvec, make_number (i));
-      else
-	module_non_local_exit_signal_1 (env, Qoverflow_error, Qnil);
-      return;
-    }
+  CHECK_VECTOR (lvec);
+  CHECK_RANGED_INTEGER (make_number (i), 0, ASIZE (lvec) - 1);
   ASET (lvec, i, value_to_lisp (val));
 }
 
@@ -643,19 +603,8 @@ module_vec_get (emacs_env *env, emacs_value vec, ptrdiff_t i)
 {
   MODULE_FUNCTION_BEGIN (module_nil);
   Lisp_Object lvec = value_to_lisp (vec);
-  if (! VECTORP (lvec))
-    {
-      module_wrong_type (env, Qvectorp, lvec);
-      return module_nil;
-    }
-  if (! (0 <= i && i < ASIZE (lvec)))
-    {
-      if (MOST_NEGATIVE_FIXNUM <= i && i <= MOST_POSITIVE_FIXNUM)
-	module_args_out_of_range (env, lvec, make_number (i));
-      else
-	module_non_local_exit_signal_1 (env, Qoverflow_error, Qnil);
-      return module_nil;
-    }
+  CHECK_VECTOR (lvec);
+  CHECK_RANGED_INTEGER (make_number (i), 0, ASIZE (lvec) - 1);
   return lisp_to_value (AREF (lvec, i));
 }
 
@@ -665,11 +614,7 @@ module_vec_size (emacs_env *env, emacs_value vec)
   /* FIXME: Return a sentinel value (e.g., -1) on error.  */
   MODULE_FUNCTION_BEGIN (0);
   Lisp_Object lvec = value_to_lisp (vec);
-  if (! VECTORP (lvec))
-    {
-      module_wrong_type (env, Qvectorp, lvec);
-      return 0;
-    }
+  CHECK_VECTOR (lvec);
   return ASIZE (lvec);
 }
 
@@ -828,14 +773,6 @@ module_non_local_exit_throw_1 (emacs_env *env, Lisp_Object tag,
     }
 }
 
-/* Module version of `wrong_type_argument'.  */
-static void
-module_wrong_type (emacs_env *env, Lisp_Object predicate, Lisp_Object value)
-{
-  module_non_local_exit_signal_1 (env, Qwrong_type_argument,
-				  list2 (predicate, value));
-}
-
 /* Signal an out-of-memory condition to the caller.  */
 static void
 module_out_of_memory (emacs_env *env)
@@ -844,13 +781,6 @@ module_out_of_memory (emacs_env *env)
      been modified.  */
   module_non_local_exit_signal_1 (env, XCAR (Vmemory_signal_data),
 				  XCDR (Vmemory_signal_data));
-}
-
-/* Signal arguments are out of range.  */
-static void
-module_args_out_of_range (emacs_env *env, Lisp_Object a1, Lisp_Object a2)
-{
-  module_non_local_exit_signal_1 (env, Qargs_out_of_range, list2 (a1, a2));
 }
 
 

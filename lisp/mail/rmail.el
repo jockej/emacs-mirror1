@@ -163,7 +163,7 @@ its character representation and its display representation.")
 (put 'rmail-spool-directory 'standard-value
      '((cond ((file-exists-p "/var/mail") "/var/mail/")
 	     ((file-exists-p "/var/spool/mail") "/var/spool/mail/")
-	     ((memq system-type '(hpux usg-unix-v irix)) "/usr/mail/")
+	     ((memq system-type '(hpux usg-unix-v)) "/usr/mail/")
 	     (t "/usr/spool/mail/"))))
 
 ;;;###autoload
@@ -176,7 +176,7 @@ its character representation and its display representation.")
 	 "/var/mail/")
 	;; Many GNU/Linux systems use this name.
 	((file-exists-p "/var/spool/mail") "/var/spool/mail/")
-	((memq system-type '(hpux usg-unix-v irix)) "/usr/mail/")
+	((memq system-type '(hpux usg-unix-v)) "/usr/mail/")
 	(t "/usr/spool/mail/")))
   "Name of directory used by system mailer for delivering new mail.
 Its name should end with a slash."
@@ -241,6 +241,7 @@ please report it with \\[report-emacs-bug].")
 (declare-function mail-dont-reply-to "mail-utils" (destinations))
 (declare-function rmail-update-summary "rmailsum" (&rest ignore))
 (declare-function rmail-mime-toggle-hidden "rmailmm" ())
+(declare-function rmail-mime-entity-truncated "rmailmm" (entity))
 
 (defun rmail-probe (prog)
   "Determine what flavor of movemail PROG is.
@@ -2799,7 +2800,12 @@ The current mail message becomes the message displayed."
 	  ;; rmail-header-style based on the binding in effect when
 	  ;; this function is called; `rmail-toggle-headers' can
 	  ;; inspect this value to determine how to toggle.
-	  (set (make-local-variable 'rmail-header-style) header-style))
+	  (set (make-local-variable 'rmail-header-style) header-style)
+          ;; In case viewing the previous message sets the paragraph
+          ;; direction non-nil, we reset it here to allow independent
+          ;; dynamic determination of paragraph direction in every
+          ;; message.
+          (setq bidi-paragraph-direction nil))
 	(if (and rmail-enable-mime
 		 rmail-show-mime-function
 		 (re-search-forward "mime-version: 1.0" nil t))
@@ -4583,6 +4589,7 @@ Argument MIME is non-nil if this is a mime message."
 ;; There doesn't really seem to be an appropriate menu.
 ;; Eg the edit command is not in a menu either.
 
+(defvar rmail-mime-render-html-function) ; defcustom in rmailmm
 (defun rmail-epa-decrypt ()
   "Decrypt GnuPG or OpenPGP armors in current message."
   (interactive)
