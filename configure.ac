@@ -378,6 +378,12 @@ otherwise for the first of 'inotify', 'kqueue' or 'gfile' that is usable.])
 OPTION_DEFAULT_OFF([xwidgets],
   [enable use of some gtk widgets in Emacs buffers (requires gtk3)])
 
+OPTION_DEFAULT_OFF([new_overlays],
+  [Use AA-tree for overlays])
+
+OPTION_DEFAULT_OFF([both_overlays],
+  [Use both overlays and a lot of assertions])
+
 ## For the times when you want to build Emacs but don't have
 ## a suitable makeinfo, and can live without the manuals.
 dnl http://lists.gnu.org/archive/html/emacs-devel/2008-04/msg01844.html
@@ -2641,6 +2647,35 @@ AC_SUBST(XWIDGETS_OBJ)
 
 CFLAGS=$OLD_CFLAGS
 LIBS=$OLD_LIBS
+
+
+BOTH_OVERLAYS=no
+NEW_OVERLAYS=no
+OVERLAYS_OBJ=
+OVERLAYS_H=
+if test "$with_new_overlays" != "no"; then
+  if test "$with_both_overlays" != "no"; then
+  AS_ECHO([both? ${BOTH_OVERLAYS} $with_new_overlays $with_both_overlays])
+    AC_MSG_ERROR([Can't have both new-overlays and both-overlays.])
+  fi
+  NEW_OVERLAYS=yes
+  AC_DEFINE([NEW_OVERLAYS], 1, [Use new overlays.])
+  OVERLAYS_OBJ=overlays.o
+  OVERLAYS_H=overlays.h
+fi
+
+if test "$with_both_overlays" != "no"; then
+  if test "x$ac_enable_checking" == "x" ; then
+    AC_MSG_ERROR([with-both_overlays only makes sense with enable-checking])
+  fi
+  BOTH_OVERLAYS=yes
+  AC_DEFINE([BOTH_OVERLAYS], 1, [Use both overlays.])
+  OVERLAYS_OBJ=overlays.o
+  OVERLAYS_H=overlays.h
+fi
+AC_SUBST(OVERLAYS_OBJ)
+AC_SUBST(OVERLAYS_H)
+
 
 dnl D-Bus has been tested under GNU/Linux only.  Must be adapted for
 dnl other platforms.
@@ -5284,6 +5319,8 @@ AS_ECHO(["  Does Emacs use -lXaw3d?                                 ${HAVE_XAW3D
   Does Emacs have dynamic modules support?                ${HAVE_MODULES}
   Does Emacs use toolkit scroll bars?                     ${USE_TOOLKIT_SCROLL_BARS}
   Does Emacs support Xwidgets (requires gtk3)?            ${HAVE_XWIDGETS}
+  Does Emacs use both overlay structures?                 ${BOTH_OVERLAYS}
+  Does Emacs use AA-tree for overlays?                    ${NEW_OVERLAYS}
 "])
 
 if test -n "${EMACSDATA}"; then

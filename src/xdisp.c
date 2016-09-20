@@ -315,6 +315,9 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "fontset.h"
 #include "blockinput.h"
 #include "xwidget.h"
+#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
+#include "overlays.h"
+#endif
 #ifdef HAVE_WINDOW_SYSTEM
 #include TERM_HEADER
 #endif /* HAVE_WINDOW_SYSTEM */
@@ -5499,7 +5502,7 @@ handle_composition_prop (struct it *it)
 
 /* The following structure is used to record overlay strings for
    later sorting in load_overlay_strings.  */
-
+#if !defined(NEW_OVERLAYS) && !defined(BOTH_OVERLAYS)
 struct overlay_entry
 {
   Lisp_Object overlay;
@@ -5507,7 +5510,7 @@ struct overlay_entry
   EMACS_INT priority;
   bool after_string_p;
 };
-
+#endif
 
 /* Set up iterator IT from overlay strings at its current position.
    Called from handle_stop.  */
@@ -5709,6 +5712,7 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
   if (charpos <= 0)
     charpos = IT_CHARPOS (*it);
 
+#ifndef NEW_OVERLAYS
   /* Append the overlay string STRING of overlay OVERLAY to vector
      `entries' which has size `size' and currently contains `n'
      elements.  AFTER_P means STRING is an after-string of
@@ -5815,6 +5819,30 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
     }
 
 #undef RECORD_OVERLAY_STRING
+#ifdef BOTH_OVERLAYS
+  struct window *sw = XWINDOW (window);
+  ptrdiff_t n1, ii, jj;
+  struct overlay_entry entriesbuf1[20];
+  ptrdiff_t size1 = ARRAYELTS (entriesbuf);
+  overlay_tree_load_overlays (current_buffer->overlays_root,
+                              charpos, &size, &entries, &n, sw);
+  eassert (n1 == n);
+  for (ii = 0; ii < n; ii++) {
+    bool found = false;
+    struct overlay_entry *oe1 = &entries[ii];
+    for (jj = 0; jj < n; jj++) {
+      struct overlay_entry *oe2 = &entries1[jj];
+      if (*oe1 == *oe2)
+        found = true;
+    }
+    eassert (found);
+  }
+#endif
+#else  /* if NEW_OVERLAYS is defined */
+  struct window *sw = XWINDOW (window);
+  overlay_tree_load_overlays (current_buffer->overlays_root,
+                              charpos, &size, &entries, &n, sw);
+#endif
 
   /* Sort entries.  */
   if (n > 1)
@@ -5838,6 +5866,7 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
   CHECK_IT (it);
   SAFE_FREE ();
 }
+
 
 
 /* Get the first chunk of overlay strings at IT's current buffer

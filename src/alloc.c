@@ -3799,6 +3799,18 @@ build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object plist)
   OVERLAY_END (overlay) = end;
   set_overlay_plist (overlay, plist);
   XOVERLAY (overlay)->next = NULL;
+
+#ifdef NEW_OVERLAYS
+  XOVERLAY (overlay)->left = NULL;
+  XOVERLAY (overlay)->right = NULL;
+  ptrdiff_t char_start = XINT (Fmarker_position (start));
+  XOVERLAY (overlay)->char_start = char_start;
+  XOVERLAY (overlay)->byte_start = CHAR_TO_BYTE(char_start);
+  ptrdiff_t char_end = XINT (Fmarker_position(end));
+  XOVERLAY (overlay)->char_end = char_end;
+  XOVERLAY (overlay)->byte_end = CHAR_TO_BYTE(char_end);
+#endif
+
   return overlay;
 }
 

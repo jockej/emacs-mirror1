@@ -2112,11 +2112,30 @@ struct Lisp_Overlay
   {
     ENUM_BF (Lisp_Misc_Type) type : 16;	/* = Lisp_Misc_Overlay */
     bool_bf gcmarkbit : 1;
+
+#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
+    bool_bf start_insertion_type : 1;
+    bool_bf end_insertion_type : 1;
+    unsigned spacer : 13;
+#else
     unsigned spacer : 15;
+#endif
+
     struct Lisp_Overlay *next;
     Lisp_Object start;
     Lisp_Object end;
     Lisp_Object plist;
+
+#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
+    ptrdiff_t char_start, char_end;
+    ptrdiff_t byte_start, byte_end;
+    ptrdiff_t max;
+
+    /* For the tree.  */
+    Lisp_Object parent; /* buffer or parent node */
+    struct Lisp_Overlay *left, *right;
+    unsigned level;
+#endif
   };
 
 /* Types of data which may be saved in a Lisp_Save_Value.  */
@@ -3965,7 +3984,10 @@ extern void adjust_overlays_for_insert (ptrdiff_t, ptrdiff_t);
 extern void adjust_overlays_for_delete (ptrdiff_t, ptrdiff_t);
 extern void fix_start_end_in_overlays (ptrdiff_t, ptrdiff_t);
 extern void report_overlay_modification (Lisp_Object, Lisp_Object, bool,
-                                         Lisp_Object, Lisp_Object, Lisp_Object);
+                                         Lisp_Object, Lisp_Object,
+                                         Lisp_Object);
+
+
 extern bool overlay_touches_p (ptrdiff_t);
 extern Lisp_Object other_buffer_safely (Lisp_Object);
 extern Lisp_Object get_truename_buffer (Lisp_Object);
@@ -3973,6 +3995,10 @@ extern void init_buffer_once (void);
 extern void init_buffer (int);
 extern void syms_of_buffer (void);
 extern void keys_of_buffer (void);
+
+/* Defined in overlay.c */
+
+extern void syms_of_overlays(void);
 
 /* Defined in marker.c.  */
 

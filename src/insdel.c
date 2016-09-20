@@ -27,6 +27,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "intervals.h"
 #include "character.h"
 #include "buffer.h"
+#include "overlays.h"
 #include "window.h"
 #include "region-cache.h"
 
@@ -840,6 +841,10 @@ insert_1_both (const char *string,
 			     PT + nchars, PT_BYTE + nbytes,
 			     before_markers);
 
+  overlay_tree_adjust_for_insert(current_buffer->overlays_root, PT, PT
+                                 + nchars, PT_BYTE, PT_BYTE + nbytes,
+                                 before_markers);
+
   offset_intervals (current_buffer, PT, nchars);
 
   if (!inherit && buffer_intervals (current_buffer))
@@ -966,6 +971,12 @@ insert_from_string_1 (Lisp_Object string, ptrdiff_t pos, ptrdiff_t pos_byte,
 			     PT_BYTE + outgoing_nbytes,
 			     before_markers);
 
+  overlay_tree_adjust_for_insert(current_buffer->overlays_root, PT,
+                                 PT + nchars, PT_BYTE,
+                                 PT_BYTE + outgoing_nbytes,
+                                 before_markers);
+
+
   offset_intervals (current_buffer, PT, nchars);
 
   intervals = string_intervals (string);
@@ -1019,6 +1030,12 @@ insert_from_gap (ptrdiff_t nchars, ptrdiff_t nbytes, bool text_at_gap_tail)
   adjust_overlays_for_insert (ins_charpos, nchars);
   adjust_markers_for_insert (ins_charpos, ins_bytepos,
 			     ins_charpos + nchars, ins_bytepos + nbytes, 0);
+
+  overlay_tree_adjust_for_insert(current_buffer->overlays_root,
+                                 ins_charpos, ins_charpos + nchars
+                                 , ins_bytepos, ins_bytepos + nbytes,
+                                 0);
+
 
   if (buffer_intervals (current_buffer))
     {
@@ -1163,6 +1180,11 @@ insert_from_buffer_1 (struct buffer *buf,
 			     PT_BYTE + outgoing_nbytes,
 			     0);
 
+  overlay_tree_adjust_for_insert(current_buffer->overlays_root, PT, PT
+                                 + nchars, PT_BYTE,
+                                 PT_BYTE + outgoing_nbytes, 0);
+
+
   offset_intervals (current_buffer, PT, nchars);
 
   /* Get the intervals for the part of the string we are inserting.  */
@@ -1213,11 +1235,22 @@ adjust_after_replace (ptrdiff_t from, ptrdiff_t from_byte,
   if (GAP_SIZE > 0) *(GPT_ADDR) = 0; /* Put an anchor.  */
 
   if (nchars_del > 0)
-    adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
-				len, len_byte);
+    {
+      adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
+                                  len, len_byte);
+      overlay_tree_adjust_for_replace(current_buffer->overlays_root,
+                                      from, from_byte, nchars_del,
+                                      nbytes_del, len, len_byte);
+    }
   else
-    adjust_markers_for_insert (from, from_byte,
-			       from + len, from_byte + len_byte, 0);
+    {
+      adjust_markers_for_insert (from, from_byte,
+                                 from + len, from_byte + len_byte, 0);
+      overlay_tree_adjust_for_insert(current_buffer->overlays_root,
+                                     from, from + len, from_byte,
+                                     from_byte + len_byte, 0);
+    }
+
 
   if (nchars_del > 0)
     record_delete (from, prev_text, false);
@@ -1395,8 +1428,14 @@ replace_range (ptrdiff_t from, ptrdiff_t to, Lisp_Object new,
 
   /* Adjust markers for the deletion and the insertion.  */
   if (markers)
-    adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
-				inschars, outgoing_insbytes);
+    {
+      adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
+                                  inschars, outgoing_insbytes);
+      overlay_tree_adjust_for_replace (current_buffer->overlays_root,
+                                       from, from_byte, nchars_del,
+                                       nbytes_del, inschars,
+                                       outgoing_insbytes);
+    }
 
   /* Adjust the overlay center as needed.  This must be done after
      adjusting the markers that bound the overlays.  */
@@ -1510,9 +1549,15 @@ replace_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
 
   /* Adjust markers for the deletion and the insertion.  */
   if (markers
-      && ! (nchars_del == 1 && inschars == 1 && nbytes_del == insbytes))
-    adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
-				inschars, insbytes);
+      && ! (nchars_del == 1 && inschars == 1 && nbytes_del ==
+            insbytes))
+    {
+      adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
+                                  inschars, insbytes);
+      overlay_tree_adjust_for_replace (current_buffer->overlays_root,
+                                       from, from_byte, nchars_del,
+                                       nbytes_del, inschars, insbytes);
+    }
 
   /* Adjust the overlay center as needed.  This must be done after
      adjusting the markers that bound the overlays.  */
@@ -1714,6 +1759,8 @@ del_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
   /* Relocate all markers pointing into the new, larger gap to point
      at the end of the text before the gap.  */
   adjust_markers_for_delete (from, from_byte, to, to_byte);
+  overlay_tree_adjust_for_delete(current_buffer->overlays_root, from,
+                                 from_byte, to, to_byte);
 
   MODIFF++;
   CHARS_MODIFF = MODIFF;
