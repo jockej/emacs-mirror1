@@ -21,6 +21,9 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    Geoff Voelker (voelker@cs.washington.edu)                         7-29-94
 */
 
+/* Enable GNU extensions in gnulib replacement headers.  */
+#define _GNU_SOURCE 1
+
 #include <mingw_time.h>
 #include <stddef.h> /* for offsetof */
 #include <stdlib.h>
@@ -2822,10 +2825,13 @@ init_environment (char ** argv)
 		  }
 		if (strcmp (env_vars[i].name, "HOME") == 0 && !appdata)
 		  Vdelayed_warnings_list
-		    = Fcons (listn (CONSTYPE_HEAP, 2,
-				    intern ("initialization"),
-				    build_string ("Setting HOME to C:\\ by default is deprecated")),
-			     Vdelayed_warnings_list);
+                    = Fcons
+                    (listn (CONSTYPE_HEAP, 2,
+                            intern ("initialization"), build_string
+                            ("Use of `C:\\.emacs' without defining `HOME'\n"
+                             "in the environment is deprecated, "
+                             "see `Windows HOME' in the Emacs manual.")),
+                     Vdelayed_warnings_list);
 	      }
 
 	    if (lpval)

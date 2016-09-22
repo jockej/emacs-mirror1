@@ -146,6 +146,9 @@ xtzfree (timezone_t tz)
 static timezone_t
 tzlookup (Lisp_Object zone, bool settz)
 {
+  static char const tzbuf_format[] = "<%+.*"pI"d>%s%"pI"d:%02d:%02d";
+  char const *trailing_tzbuf_format = tzbuf_format + sizeof "<%+.*"pI"d" - 1;
+  char tzbuf[sizeof tzbuf_format + 2 * INT_STRLEN_BOUND (EMACS_INT)];
   char const *zone_string;
   timezone_t new_tz;
 
@@ -158,9 +161,6 @@ tzlookup (Lisp_Object zone, bool settz)
     }
   else
     {
-      static char const tzbuf_format[] = "<%+.*"pI"d>%s%"pI"d:%02d:%02d";
-      char const *trailing_tzbuf_format = tzbuf_format + sizeof "<%+.*"pI"d" - 1;
-      char tzbuf[sizeof tzbuf_format + 2 * INT_STRLEN_BOUND (EMACS_INT)];
       bool plain_integer = INTEGERP (zone);
 
       if (EQ (zone, Qwall))
@@ -1065,7 +1065,14 @@ usage: (save-current-buffer &rest BODY)  */)
 
 DEFUN ("buffer-size", Fbuffer_size, Sbuffer_size, 0, 1, 0,
        doc: /* Return the number of characters in the current buffer.
-If BUFFER, return the number of characters in that buffer instead.  */)
+If BUFFER is not nil, return the number of characters in that buffer
+instead.
+
+This does not take narrowing into account; to count the number of
+characters in the accessible portion of the current buffer, use
+`(- (point-max) (point-min))', and to count the number of characters
+in some other BUFFER, use
+`(with-current-buffer BUFFER (- (point-max) (point-min)))'.  */)
   (Lisp_Object buffer)
 {
   if (NILP (buffer))
@@ -3244,7 +3251,7 @@ Both characters must have the same length of multi-byte form.  */)
 	      /* replace_range is less efficient, because it moves the gap,
 		 but it handles combining correctly.  */
 	      replace_range (pos, pos + 1, string,
-			     0, 0, 1);
+			     0, 0, 1, 0);
 	      pos_byte_next = CHAR_TO_BYTE (pos);
 	      if (pos_byte_next > pos_byte)
 		/* Before combining happened.  We should not increment
@@ -3457,7 +3464,7 @@ It returns the number of characters changed.  */)
 		  /* This is less efficient, because it moves the gap,
 		     but it should handle multibyte characters correctly.  */
 		  string = make_multibyte_string ((char *) str, 1, str_len);
-		  replace_range (pos, pos + 1, string, 1, 0, 1);
+		  replace_range (pos, pos + 1, string, 1, 0, 1, 0);
 		  len = str_len;
 		}
 	      else
@@ -3498,7 +3505,7 @@ It returns the number of characters changed.  */)
 		{
 		  string = Fmake_string (make_number (1), val);
 		}
-	      replace_range (pos, pos + len, string, 1, 0, 1);
+	      replace_range (pos, pos + len, string, 1, 0, 1, 0);
 	      pos_byte += SBYTES (string);
 	      pos += SCHARS (string);
 	      cnt += SCHARS (string);
@@ -3860,7 +3867,8 @@ specifiers, as follows:
 
   %<flags><width><precision>character
 
-where flags is [+ #-0]+, width is [0-9]+, and precision is .[0-9]+
+where flags is [+ #-0]+, width is [0-9]+, and precision is a literal
+period "." followed by [0-9]+
 
 The + flag character inserts a + before any positive number, while a
 space inserts a space before any positive number; these flags only
@@ -3899,10 +3907,9 @@ DEFUN ("format-message", Fformat_message, Sformat_message, 1, MANY, 0,
 The first argument is a format control string.
 The other arguments are substituted into it to make the result, a string.
 
-This acts like `format', except it also replaces each left single
-quotation mark (\\=‘) and grave accent (\\=`) by a left quote, and each
-right single quotation mark (\\=’) and apostrophe (\\=') by a right quote.
-The left and right quote replacement characters are specified by
+This acts like `format', except it also replaces each grave accent (\\=`)
+by a left quote, and each apostrophe (\\=') by a right quote.  The left
+and right quote replacement characters are specified by
 `text-quoting-style'.
 
 usage: (format-message STRING &rest OBJECTS)  */)
@@ -4175,13 +4182,13 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 	      convbytes += padding;
 	      if (convbytes <= buf + bufsize - p)
 		{
-                  info[n].start = nchars;
 		  if (! minus_flag)
 		    {
 		      memset (p, ' ', padding);
 		      p += padding;
 		      nchars += padding;
 		    }
+                  info[n].start = nchars;
 
 		  if (p > buf
 		      && multibyte
@@ -4631,7 +4638,7 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 	      len = make_number (SCHARS (args[i]));
 	      Lisp_Object new_len = make_number (info[i].end - info[i].start);
 	      props = text_property_list (args[i], make_number (0), len, Qnil);
-	      props = extend_property_ranges (props, new_len);
+	      props = extend_property_ranges (props, len, new_len);
 	      /* If successive arguments have properties, be sure that
 		 the value of `composition' property be the copy.  */
 	      if (1 < i && info[i - 1].end)
@@ -5057,6 +5064,14 @@ Transposing beyond buffer boundaries is an error.  */)
 			 start1_byte, start1_byte + len1_byte,
 			 start2_byte, start2_byte + len2_byte);
       fix_start_end_in_overlays (start1, end2);
+    }
+  else
+    {
+      /* The character positions of the markers remain intact, but we
+	 still need to update their byte positions, because the
+	 transposed regions might include multibyte sequences which
+	 make some original byte positions of the markers invalid.  */
+      adjust_markers_bytepos (start1, start1_byte, end2, end2_byte, 0);
     }
 
   signal_after_change (start1, end2 - start1, end2 - start1);

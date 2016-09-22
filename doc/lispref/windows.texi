@@ -2233,15 +2233,15 @@ This function makes @var{buffer-or-name} the current buffer and
 displays it in some window, preferably not the window currently
 selected.  It then selects the displaying window.  If that window is
 on a different graphical frame, that frame is given input focus if
-possible (@pxref{Input Focus}).  The return value is the buffer that
-was switched to.
+possible (@pxref{Input Focus}).
 
 If @var{buffer-or-name} is @code{nil}, it defaults to the buffer
 returned by @code{other-buffer} (@pxref{Buffer List}).  If
 @var{buffer-or-name} is a string that is not the name of any existing
 buffer, this function creates a new buffer with that name; the new
 buffer's major mode is determined by the variable @code{major-mode}
-(@pxref{Major Modes}).
+(@pxref{Major Modes}).  In any case, that buffer is made current and
+returned, even when no suitable window was found to display it.
 
 If @var{action} is non-@code{nil}, it should be a display action to
 pass to @code{display-buffer} (@pxref{Choosing Window}).
@@ -2426,7 +2426,7 @@ If @var{alist} contains a @code{mode} entry, its value is a major mode
 window is a candidate if it displays a buffer that derives from one of
 the given modes.
 
-The behaviour is also controlled by entries for
+The behavior is also controlled by entries for
 @code{inhibit-same-window}, @code{reusable-frames} and
 @code{inhibit-switch-frame} as is done in the function
 @code{display-buffer-reuse-window}.
@@ -2524,10 +2524,17 @@ parameter; @pxref{Buffer Parameters}).
 
 @defun display-buffer-below-selected buffer alist
 This function tries to display @var{buffer} in a window below the
-selected window.  This means to either split the selected window or use
-the window below the selected one.  If it does create a new window, it
-will also adjust its size provided @var{alist} contains a suitable
+selected window.  If there is a window below the selected one and that
+window already displays @var{buffer}, it reuses that window.
+
+If there is no such window, this function tries to create a new window
+by splitting the selected one and display @var{buffer} there.  It will
+also adjust that window's size provided @var{alist} contains a suitable
 @code{window-height} or @code{window-width} entry, see above.
+
+If splitting the selected window fails and there is a non-dedicated
+window below the selected one showing some other buffer, it uses that
+window for showing @var{buffer}.
 @end defun
 
 @defun display-buffer-in-previous-window buffer alist
@@ -4379,6 +4386,27 @@ window when it deletes the window passed to it as argument.
 The fourth element is the buffer whose display caused the creation of
 this parameter.  @code{quit-restore-window} deletes the specified window
 only if it still shows that buffer.
+
+@item @code{min-margins}
+The value of this parameter is a cons cell whose @sc{car} and @sc{cdr},
+if non-@code{nil}, specify the minimum values (in columns) for the left
+and right margin of this window.  When present, Emacs will use these
+values instead of the actual margin widths for determining whether a
+window can be split or shrunk horizontally.
+
+Emacs never auto-adjusts the margins of any window after splitting or
+resizing it.  It is the sole responsibility of any application setting
+this parameter to adjust the margins of this window as well as those of
+any new window that inherits this window's margins due to a split.
+Both @code{window-configuration-change-hook} and
+@code{window-size-change-functions} (@pxref{Window Hooks}) should be
+employed for this purpose.
+
+This parameter was introduced in Emacs version 25.1 to support
+applications that use large margins to center buffer text within a
+window and should be used, with due care, exclusively by those
+applications.  It might be replaced by an improved solution in future
+versions of Emacs.
 @end table
 
 There are additional parameters @code{window-atom} and @code{window-side};

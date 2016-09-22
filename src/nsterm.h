@@ -39,6 +39,9 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #ifndef MAC_OS_X_VERSION_10_9
 #define MAC_OS_X_VERSION_10_9 1090
 #endif
+#ifndef MAC_OS_X_VERSION_10_12
+#define MAC_OS_X_VERSION_10_12 101200
+#endif
 
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
 #define HAVE_NATIVE_FS
@@ -380,9 +383,9 @@ char const * nstrace_fullscreen_type_name (int);
 #endif
 #ifdef NS_IMPL_GNUSTEP
   BOOL applicationDidFinishLaunchingCalled;
+#endif
 @public
   int nextappdefined;
-#endif
 }
 - (void)logNotification: (NSNotification *)notification;
 - (void)antialiasThresholdDidChange:(NSNotification *)notification;
@@ -1014,7 +1017,7 @@ struct x_output
 #define FRAME_NS_TITLEBAR_HEIGHT(f) ((f)->output_data.ns->titlebar_height)
 #define FRAME_TOOLBAR_HEIGHT(f) ((f)->output_data.ns->toolbar_height)
 
-#define FRAME_DEFAULT_FACE(f) FACE_OPT_FROM_ID (f, DEFAULT_FACE_ID)
+#define FRAME_DEFAULT_FACE(f) FACE_FROM_ID_OR_NULL (f, DEFAULT_FACE_ID)
 
 #define FRAME_NS_VIEW(f) ((f)->output_data.ns->view)
 #define FRAME_CURSOR_COLOR(f) ((f)->output_data.ns->cursor_color)
@@ -1232,5 +1235,43 @@ extern char gnustep_base_version[];  /* version tracking */
 #define IN_BOUND(min, x, max) (((x) < (min)) \
                                 ? (min) : (((x)>(max)) ? (max) : (x)))
 #define SCREENMAXBOUND(x) (IN_BOUND (-SCREENMAX, x, SCREENMAX))
+
+/* macOS 10.12 deprecates a bunch of constants. */
+#if !defined (NS_IMPL_COCOA) || \
+  MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_12
+#define NSEventModifierFlagCommand         NSCommandKeyMask
+#define NSEventModifierFlagControl         NSControlKeyMask
+#define NSEventModifierFlagHelp            NSHelpKeyMask
+#define NSEventModifierFlagNumericPad      NSNumericPadKeyMask
+#define NSEventModifierFlagOption          NSAlternateKeyMask
+#define NSEventModifierFlagShift           NSShiftKeyMask
+#define NSCompositingOperationSourceOver   NSCompositeSourceOver
+#define NSEventMaskApplicationDefined      NSApplicationDefinedMask
+#define NSEventTypeApplicationDefined      NSApplicationDefined
+#define NSEventTypeCursorUpdate            NSCursorUpdate
+#define NSEventTypeMouseMoved              NSMouseMoved
+#define NSEventTypeLeftMouseDown           NSLeftMouseDown
+#define NSEventTypeRightMouseDown          NSRightMouseDown
+#define NSEventTypeOtherMouseDown          NSOtherMouseDown
+#define NSEventTypeLeftMouseUp             NSLeftMouseUp
+#define NSEventTypeRightMouseUp            NSRightMouseUp
+#define NSEventTypeOtherMouseUp            NSOtherMouseUp
+#define NSEventTypeLeftMouseDragged        NSLeftMouseDragged
+#define NSEventTypeRightMouseDragged       NSRightMouseDragged
+#define NSEventTypeOtherMouseDragged       NSOtherMouseDragged
+#define NSEventTypeScrollWheel             NSScrollWheel
+#define NSEventTypeKeyDown                 NSKeyDown
+#define NSEventTypeKeyUp                   NSKeyUp
+#define NSEventTypeFlagsChanged            NSFlagsChanged
+#define NSEventMaskAny                     NSAnyEventMask
+#define NSWindowStyleMaskBorderless        NSBorderlessWindowMask
+#define NSWindowStyleMaskClosable          NSClosableWindowMask
+#define NSWindowStyleMaskFullScreen        NSFullScreenWindowMask
+#define NSWindowStyleMaskMiniaturizable    NSMiniaturizableWindowMask
+#define NSWindowStyleMaskResizable         NSResizableWindowMask
+#define NSWindowStyleMaskTitled            NSTitledWindowMask
+#define NSAlertStyleCritical               NSCriticalAlertStyle
+#define NSControlSizeRegular               NSRegularControlSize
+#endif
 
 #endif	/* HAVE_NS */

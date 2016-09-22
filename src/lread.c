@@ -27,7 +27,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <sys/stat.h>
 #include <sys/file.h>
 #include <errno.h>
-#include <limits.h>	/* For CHAR_BIT.  */
 #include <math.h>
 #include <stat-time.h>
 #include "lisp.h"
@@ -1464,6 +1463,8 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
 
   for (; CONSP (path); path = XCDR (path))
     {
+      ptrdiff_t baselen, prefixlen;
+
       filename = Fexpand_file_name (str, XCAR (path));
       if (!complete_filename_p (filename))
 	/* If there are non-absolute elts in PATH (eg ".").  */
@@ -1485,6 +1486,14 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
 	  fn = SAFE_ALLOCA (fn_size);
 	}
 
+      /* Copy FILENAME's data to FN but remove starting /: if any.  */
+      prefixlen = ((SCHARS (filename) > 2
+		    && SREF (filename, 0) == '/'
+		    && SREF (filename, 1) == ':')
+		   ? 2 : 0);
+      baselen = SBYTES (filename) - prefixlen;
+      memcpy (fn, SDATA (filename) + prefixlen, baselen);
+
       /* Loop over suffixes.  */
       for (tail = NILP (suffixes) ? list1 (empty_unibyte_string) : suffixes;
 	   CONSP (tail); tail = XCDR (tail))
@@ -1493,16 +1502,10 @@ openp (Lisp_Object path, Lisp_Object str, Lisp_Object suffixes,
 	  ptrdiff_t fnlen, lsuffix = SBYTES (suffix);
 	  Lisp_Object handler;
 
-	  /* Concatenate path element/specified name with the suffix.
-	     If the directory starts with /:, remove that.  */
-	  int prefixlen = ((SCHARS (filename) > 2
-			    && SREF (filename, 0) == '/'
-			    && SREF (filename, 1) == ':')
-			   ? 2 : 0);
-	  fnlen = SBYTES (filename) - prefixlen;
-	  memcpy (fn, SDATA (filename) + prefixlen, fnlen);
-	  memcpy (fn + fnlen, SDATA (suffix), lsuffix + 1);
-	  fnlen += lsuffix;
+	  /* Make complete filename by appending SUFFIX.  */
+	  memcpy (fn + baselen, SDATA (suffix), lsuffix + 1);
+	  fnlen = baselen + lsuffix;
+
 	  /* Check that the file exists and is not a directory.  */
 	  /* We used to only check for handlers on non-absolute file names:
 	        if (absolute)
@@ -2467,7 +2470,7 @@ read_integer (Lisp_Object readcharfun, EMACS_INT radix)
 {
   /* Room for sign, leading 0, other digits, trailing null byte.
      Also, room for invalid syntax diagnostic.  */
-  char buf[max (1 + 1 + sizeof (uintmax_t) * CHAR_BIT + 1,
+  char buf[max (1 + 1 + UINTMAX_WIDTH + 1,
 		sizeof "integer, radix " + INT_STRLEN_BOUND (EMACS_INT))];
 
   int valid = -1; /* 1 if valid, 0 if not, -1 if incomplete.  */

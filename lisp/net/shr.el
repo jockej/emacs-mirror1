@@ -37,6 +37,7 @@
 (require 'dom)
 (require 'seq)
 (require 'svg)
+(require 'image)
 
 (defgroup shr nil
   "Simple HTML Renderer"
@@ -661,13 +662,12 @@ size, and full-buffer size."
       ;; Success; continue.
       (when (= (preceding-char) ?\s)
 	(delete-char -1))
-      (let ((face (get-text-property (point) 'face))
-	    (background-start (point)))
+      (let ((props (text-properties-at (point)))
+	    (gap-start (point)))
 	(insert "\n")
 	(shr-indent)
-	(when face
-	  (put-text-property background-start (point) 'face
-			     `,(shr-face-background face))))
+	(when props
+	  (add-text-properties gap-start (point) props)))
       (setq start (point))
       (shr-vertical-motion shr-internal-width)
       (when (looking-at " $")
@@ -788,11 +788,12 @@ size, and full-buffer size."
   ;; Strip leading whitespace
   (and url (string-match "\\`\\s-+" url)
        (setq url (substring url (match-end 0))))
-  (cond ((or (not url)
-	     (not base)
+  (cond ((zerop (length url))
+         (nth 3 base))
+        ((or (not base)
 	     (string-match "\\`[a-z]*:" url))
 	 ;; Absolute or empty URI
-	 (or url (nth 3 base)))
+	 url)
 	((eq (aref url 0) ?/)
 	 (if (and (> (length url) 1)
 		  (eq (aref url 1) ?/))

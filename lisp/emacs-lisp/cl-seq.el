@@ -116,6 +116,16 @@
 (defun cl-reduce (cl-func cl-seq &rest cl-keys)
   "Reduce two-argument FUNCTION across SEQ.
 \nKeywords supported:  :start :end :from-end :initial-value :key
+
+Return the result of calling FUNCTION with the first and the
+second element of SEQ, then calling FUNCTION with that result and
+the third element of SEQ, then with that result and the fourth
+element of SEQ, etc.
+
+If :INITIAL-VALUE is specified, it is added to the front of SEQ.
+If SEQ is empty, return :INITIAL-VALUE and FUNCTION is not
+called.
+
 \n(fn FUNCTION SEQ [KEYWORD VALUE]...)"
   (cl--parsing-keywords (:from-end (:start 0) :end :initial-value :key) ()
     (or (listp cl-seq) (setq cl-seq (append cl-seq nil)))
@@ -134,24 +144,24 @@
       cl-accum)))
 
 ;;;###autoload
-(defun cl-fill (seq item &rest cl-keys)
+(defun cl-fill (cl-seq cl-item &rest cl-keys)
   "Fill the elements of SEQ with ITEM.
 \nKeywords supported:  :start :end
 \n(fn SEQ ITEM [KEYWORD VALUE]...)"
   (cl--parsing-keywords ((:start 0) :end) ()
-    (if (listp seq)
-	(let ((p (nthcdr cl-start seq))
+    (if (listp cl-seq)
+	(let ((p (nthcdr cl-start cl-seq))
 	      (n (if cl-end (- cl-end cl-start) 8000000)))
 	  (while (and p (>= (setq n (1- n)) 0))
-	    (setcar p item)
+	    (setcar p cl-item)
 	    (setq p (cdr p))))
-      (or cl-end (setq cl-end (length seq)))
-      (if (and (= cl-start 0) (= cl-end (length seq)))
-	  (fillarray seq item)
+      (or cl-end (setq cl-end (length cl-seq)))
+      (if (and (= cl-start 0) (= cl-end (length cl-seq)))
+	  (fillarray cl-seq cl-item)
 	(while (< cl-start cl-end)
-	  (aset seq cl-start item)
+	  (aset cl-seq cl-start cl-item)
 	  (setq cl-start (1+ cl-start)))))
-    seq))
+    cl-seq))
 
 ;;;###autoload
 (defun cl-replace (cl-seq1 cl-seq2 &rest cl-keys)
@@ -337,6 +347,7 @@ This is a destructive function; it reuses the storage of SEQ whenever possible.
 (defun cl--delete-duplicates (cl-seq cl-keys cl-copy)
   (if (listp cl-seq)
       (cl--parsing-keywords
+          ;; We need to parse :if, otherwise `cl-if' is unbound.
           (:test :test-not :key (:start 0) :end :from-end :if)
 	  ()
 	(if cl-from-end

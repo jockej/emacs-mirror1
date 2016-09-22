@@ -41,6 +41,7 @@ to locale @code{system-messages-locale}, and decoded using coding system
                                simultaneous editing by two people.
 * Information about Files::  Testing existence, accessibility, size of files.
 * Changing Files::           Renaming files, changing permissions, etc.
+* Files and Storage::        Surviving power and media failures
 * File Names::               Decomposing and expanding file names.
 * Contents of Directories::  Getting a list of the files in a directory.
 * Create/Delete Dirs::       Creating and Deleting Directories.
@@ -659,6 +660,15 @@ Emacs is operating in batch mode (@pxref{Batch Mode}).  This
 feature is useful for programs that use files for internal purposes,
 files that the user does not need to know about.
 @end deffn
+
+@defvar write-region-inhibit-fsync
+If this variable's value is @code{nil}, @code{write-region} uses the
+@code{fsync} system call after writing a file.  Although this slows
+Emacs down, it lessens the risk of data loss after power failure.  If
+the value is @code{t}, Emacs does not use @code{fsync}.  The default
+value is @code{nil} when Emacs is interactive, and @code{t} when Emacs
+runs in batch mode.  @xref{Files and Storage}.
+@end defvar
 
 @defmac with-temp-file file body@dots{}
 @anchor{Definition of with-temp-file}
@@ -1496,6 +1506,10 @@ error if they fail to perform their function, reporting the
 system-dependent error message that describes the reason for the
 failure.
 
+  For performance, the operating system may cache or alias changes
+made by these functions instead of writing them immediately to
+secondary storage.  @xref{Files and Storage}.
+
   In the functions that have an argument @var{newname}, if a file by the
 name of @var{newname} already exists, the actions taken depend on the
 value of the argument @var{ok-if-already-exists}:
@@ -1793,6 +1807,28 @@ by the function @code{file-acl}.  @xref{Extended Attributes}.
 The function returns @code{t} if it successfully sets the ACL of
 @var{filename}, @code{nil} otherwise.
 @end defun
+
+@node Files and Storage
+@section Files and Secondary Storage
+@cindex secondary storage
+
+After Emacs changes a file, there are two reasons the changes might
+not survive later failures of power or media, both having to do with
+efficiency.  First, the operating system might alias written data with
+data already stored elsewhere on secondary storage until one file or
+the other is later modified; this will lose both files if the only
+copy on secondary storage is lost due to media failure.  Second, the
+operating system might not write data to secondary storage
+immediately, which will lose the data if power is lost.
+
+@findex write-region
+Although both sorts of failures can largely be avoided by a suitably
+configured file system, such systems are typically more expensive or
+less efficient.  In more-typical systems, to survive media failure you
+can copy the file to a different device, and to survive a power
+failure you can use the @code{write-region} function with the
+@code{write-region-inhibit-fsync} variable set to @code{nil}.
+@xref{Writing to Files}.
 
 @node File Names
 @section File Names
@@ -2440,6 +2476,50 @@ condition, between the @code{make-temp-name} call and the creation of
 the file, which in some cases may cause a security hole.
 @end defun
 
+Sometimes, it is necessary to create a temporary file on a remote host
+or a mounted directory.  The following two functions support this.
+
+@defun make-nearby-temp-file prefix &optional dir-flag suffix
+This function is similar to @code{make-temp-file}, but it creates a
+temporary file as close as possible to @code{default-directory}.  If
+@var{prefix} is a relative file name, and @code{default-directory} is
+a remote file name or located on a mounted file systems, the temporary
+file is created in the directory returned by the function
+@code{temporary-file-directory}.  Otherwise, the function
+@code{make-temp-file} is used.  @var{prefix}, @var{dir-flag} and
+@var{suffix} have the same meaning as in @code{make-temp-file}.
+
+@example
+@group
+(let ((default-directory "/ssh:remotehost:"))
+  (make-nearby-temp-file "foo"))
+     @result{} "/ssh:remotehost:/tmp/foo232J6v"
+@end group
+@end example
+@end defun
+
+@defun temporary-file-directory
+The directory for writing temporary files via
+@code{make-nearby-temp-file}.  In case of a remote
+@code{default-directory}, this is a directory for temporary files on
+that remote host.  If such a directory does not exist, or
+@code{default-directory} ought to be located on a mounted file system
+(see @code{mounted-file-systems}), the function returns
+@code{default-directory}.  For a non-remote and non-mounted
+@code{default-directory}, the value of the variable
+@code{temporary-file-directory} is returned.
+@end defun
+
+In order to extract the local part of the path name from a temporary
+file, the following code could be used:
+
+@example
+@group
+(let ((tmpfile (make-nearby-temp-file "foo")))
+  (or (file-remote-p tmpfile 'localname) tmpfile))
+@end group
+@end example
+
 @node File Name Completion
 @subsection File Name Completion
 @cindex file name completion subroutines
@@ -2903,6 +2983,7 @@ first, before handlers for jobs such as remote file access.
 @code{make-auto-save-file-name},
 @code{make-directory},
 @code{make-directory-internal},
+@code{make-nearby-temp-file},
 @code{make-symbolic-link},@*
 @code{process-file},
 @code{rename-file}, @code{set-file-acl}, @code{set-file-modes},
@@ -2910,6 +2991,7 @@ first, before handlers for jobs such as remote file access.
 @code{set-visited-file-modtime}, @code{shell-command},
 @code{start-file-process},
 @code{substitute-in-file-name},@*
+@code{temporary-file-directory},
 @code{unhandled-file-name-directory},
 @code{vc-registered},
 @code{verify-visited-file-modtime},@*
@@ -3238,7 +3320,9 @@ end position.
 
 One responsibility of @var{from-fn} is to make sure that the beginning
 of the file no longer matches @var{regexp}.  Otherwise it is likely to
-get called again.
+get called again.  Also, @var{from-fn} must not involve buffers or
+files other than the one being decoded, otherwise the internal buffer
+used for formatting might be overwritten.
 
 @item to-fn
 A shell command or function to encode data in this format---that is, to
@@ -3268,6 +3352,10 @@ When @code{write-region} actually writes the text from the buffer to the
 file, it intermixes the specified annotations at the corresponding
 positions.  All this takes place without modifying the buffer.
 @end itemize
+
+@var{to-fn} must not involve buffers or files other than the one being
+encoded, otherwise the internal buffer used for formatting might be
+overwritten.
 
 @item modify
 A flag, @code{t} if the encoding function modifies the buffer, and

@@ -2867,20 +2867,12 @@ resize_root_window (Lisp_Object window, Lisp_Object delta,
 		horizontal, ignore, pixelwise);
 }
 
-/* Placeholder used by temacs -nw before window.el is loaded.  */
-DEFUN ("window--sanitize-window-sizes", Fwindow__sanitize_window_sizes,
-       Swindow__sanitize_window_sizes, 2, 2, 0,
-       doc: /* */
-       attributes: const)
-     (Lisp_Object frame, Lisp_Object horizontal)
+void
+sanitize_window_sizes (Lisp_Object horizontal)
 {
-  return Qnil;
-}
-
-Lisp_Object
-sanitize_window_sizes (Lisp_Object frame, Lisp_Object horizontal)
-{
-  return call2 (Qwindow__sanitize_window_sizes, frame, horizontal);
+  /* Don't burp in temacs -nw before window.el is loaded.  */
+  if (!NILP (Fsymbol_function (Qwindow__sanitize_window_sizes)))
+    call1 (Qwindow__sanitize_window_sizes, horizontal);
 }
 
 
@@ -4821,8 +4813,9 @@ window_scroll_pixel_based (Lisp_Object window, int n, bool whole, bool noerror)
   SET_TEXT_POS_FROM_MARKER (start, w->start);
   /* Scrolling a minibuffer window via scroll bar when the echo area
      shows long text sometimes resets the minibuffer contents behind
-     our backs.  */
-  if (CHARPOS (start) > ZV)
+     our backs.  Also, someone might narrow-to-region and immediately
+     call a scroll function.  */
+  if (CHARPOS (start) > ZV || CHARPOS (start) < BEGV)
     SET_TEXT_POS (start, BEGV, BEGV_BYTE);
 
   /* If PT is not visible in WINDOW, move back one half of
@@ -7576,7 +7569,6 @@ displayed after a scrolling operation to be somewhat inaccurate.  */);
   defsubr (&Sset_window_display_table);
   defsubr (&Snext_window);
   defsubr (&Sprevious_window);
-  defsubr (&Swindow__sanitize_window_sizes);
   defsubr (&Sget_buffer_window);
   defsubr (&Sdelete_other_windows_internal);
   defsubr (&Sdelete_window_internal);

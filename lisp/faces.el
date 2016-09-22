@@ -2749,7 +2749,7 @@ It is used for characters of no fonts too."
 (defface read-multiple-choice-face
   '((t (:inherit underline
         :weight bold)))
-  "Face for the symbol name in Apropos output."
+  "Face for the symbol name in `read-multiple-choice' output."
   :group 'basic-faces
   :version "25.2")
 
@@ -2881,7 +2881,7 @@ also the same size as FACE on FRAME, or fail."
 			   pattern face)))
 	      (error "No fonts match `%s'" pattern)))
 	(car fonts))
-    (cdr (assq 'font (frame-parameters (selected-frame))))))
+    (frame-parameter nil 'font)))
 
 (defcustom font-list-limit 100
   "This variable is obsolete and has no effect."

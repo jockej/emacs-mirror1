@@ -22,6 +22,9 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
      Adapted from alarm.c by Tim Fleehart
 */
 
+/* Enable GNU extensions in gnulib replacement headers.  */
+#define _GNU_SOURCE 1
+
 #include <mingw_time.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -86,9 +89,9 @@ sys_signal (int sig, signal_handler handler)
   /* SIGCHLD is needed for supporting subprocesses, see sys_kill
      below.  SIGALRM and SIGPROF are used by setitimer.  All the
      others are the only ones supported by the MS runtime.  */
-  if (!(sig == SIGCHLD || sig == SIGSEGV || sig == SIGILL
+  if (!(sig == SIGINT || sig == SIGSEGV || sig == SIGILL
 	|| sig == SIGFPE || sig == SIGABRT || sig == SIGTERM
-	|| sig == SIGALRM || sig == SIGPROF))
+	|| sig == SIGCHLD || sig == SIGALRM || sig == SIGPROF))
     {
       errno = EINVAL;
       return SIG_ERR;
@@ -224,7 +227,7 @@ sigismember (const sigset_t *set, int signo)
       errno = EINVAL;
       return -1;
     }
-  if (signo > sizeof (*set) * BITS_PER_CHAR)
+  if (signo > sizeof (*set) * CHAR_BIT)
     emacs_abort ();
 
   return (*set & (1U << signo)) != 0;

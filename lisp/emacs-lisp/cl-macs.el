@@ -327,6 +327,20 @@ FORM is of the form (ARGS . BODY)."
 Like normal `defun', except ARGLIST allows full Common Lisp conventions,
 and BODY is implicitly surrounded by (cl-block NAME ...).
 
+The full form of a Common Lisp function argument list is
+
+   (VAR...
+    [&optional (VAR [INITFORM [SVAR]])...]
+    [&rest|&body VAR]
+    [&key (([KEYWORD] VAR) [INITFORM [SVAR]])... [&allow-other-keys]]
+    [&aux (VAR [INITFORM])...])
+
+VAR maybe be replaced recursively with an argument list for
+destructing, `&whole' is supported within these sublists.  If
+SVAR, INITFORM, and KEYWORD are all omitted, then `(VAR)' may be
+written simply `VAR'.  See the Info node `(cl)Argument Lists' for
+more details.
+
 \(fn NAME ARGLIST [DOCSTRING] BODY...)"
   (declare (debug
             ;; Same as defun but use cl-lambda-list.
@@ -405,6 +419,21 @@ and BODY is implicitly surrounded by (cl-block NAME ...).
   "Define NAME as a macro.
 Like normal `defmacro', except ARGLIST allows full Common Lisp conventions,
 and BODY is implicitly surrounded by (cl-block NAME ...).
+
+The full form of a Common Lisp macro argument list is
+
+   (VAR...
+    [&optional (VAR [INITFORM [SVAR]])...]
+    [&rest|&body VAR]
+    [&key (([KEYWORD] VAR) [INITFORM [SVAR]])... [&allow-other-keys]]
+    [&aux (VAR [INITFORM])...]
+    [&environment VAR])
+
+VAR maybe be replaced recursively with an argument list for
+destructing, `&whole' is supported within these sublists.  If
+SVAR, INITFORM, and KEYWORD are all omitted, then `(VAR)' may be
+written simply `VAR'.  See the Info node `(cl)Argument Lists' for
+more details.
 
 \(fn NAME ARGLIST [DOCSTRING] BODY...)"
   (declare (debug
@@ -1808,6 +1837,27 @@ Labels have lexical scope and dynamic extent."
                     `(throw ',catch-tag ',label))))
          ,@macroexpand-all-environment)))))
 
+(defun cl--prog (binder bindings body)
+  (let (decls)
+    (while (eq 'declare (car-safe (car body)))
+      (push (pop body) decls))
+    `(cl-block nil
+       (,binder ,bindings
+         ,@(nreverse decls)
+         (cl-tagbody . ,body)))))
+
+;;;###autoload
+(defmacro cl-prog (bindings &rest body)
+  "Run BODY like a `cl-tagbody' after setting up the BINDINGS.
+Shorthand for (cl-block nil (let BINDINGS (cl-tagbody BODY)))"
+  (cl--prog 'let bindings body))
+
+;;;###autoload
+(defmacro cl-prog* (bindings &rest body)
+  "Run BODY like a `cl-tagbody' after setting up the BINDINGS.
+Shorthand for (cl-block nil (let* BINDINGS (cl-tagbody BODY)))"
+  (cl--prog 'let* bindings body))
+
 ;;;###autoload
 (defmacro cl-do-symbols (spec &rest body)
   "Loop over all symbols.
@@ -2528,16 +2578,16 @@ non-nil value, that slot cannot be set via `setf'.
              [&or symbolp
                   (gate
                    symbolp &rest
-                   (&or [":conc-name" symbolp]
-                        [":constructor" symbolp &optional cl-lambda-list]
-                        [":copier" symbolp]
-                        [":predicate" symbolp]
-                        [":include" symbolp &rest sexp] ;; Not finished.
-                        ;; The following are not supported.
-                        ;; [":print-function" ...]
-                        ;; [":type" ...]
-                        ;; [":initial-offset" ...]
-                        ))]
+                   [&or symbolp
+                        (&or [":conc-name" symbolp]
+                             [":constructor" symbolp &optional cl-lambda-list]
+                             [":copier" symbolp]
+                             [":predicate" symbolp]
+                             [":include" symbolp &rest sexp] ;; Not finished.
+                             [":print-function" sexp]
+                             [":type" symbolp]
+                             [":named"]
+                             [":initial-offset" natnump])])]
              [&optional stringp]
              ;; All the above is for the following def-form.
              &rest &or symbolp (symbolp def-form
@@ -2978,7 +3028,7 @@ omitted, a default message listing FORM itself is used."
                          (delq nil (mapcar (lambda (x)
                                              (unless (macroexp-const-p x)
                                                x))
-                                           (cdr form))))))
+                                           (cdr-safe form))))))
 	 `(progn
             (or ,form
                 (cl--assertion-failed

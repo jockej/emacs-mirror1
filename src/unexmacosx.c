@@ -85,6 +85,9 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    be changed accordingly.
 */
 
+/* Enable GNU extensions in gnulib replacement headers.  */
+#define _GNU_SOURCE 1
+
 /* config.h #define:s malloc/realloc/free and then includes stdlib.h.
    We want the undefined versions, but if config.h includes stdlib.h
    with the #define:s in place, the prototypes will be wrong and we get

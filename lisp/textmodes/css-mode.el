@@ -56,7 +56,7 @@
 
 (defconst css-at-ids
   '("charset" "font-face" "import" "keyframes" "media" "namespace"
-    "page")
+    "page" "supports")
   "Identifiers that appear in the form @foo.")
 
 (defconst scss-at-ids
@@ -853,7 +853,8 @@ the string PROPERTY."
         (save-excursion
           (skip-chars-backward "[:graph:]")
           (list (point) end
-                (cons "inherit" (css--property-values property))))))))
+                (append '("inherit" "initial" "unset")
+                        (css--property-values property))))))))
 
 (defvar css--html-tags (mapcar #'car html-tag-alist)
   "List of HTML tags.

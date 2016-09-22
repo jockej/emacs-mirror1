@@ -30,7 +30,9 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #endif
 
 #include <setjmp.h>
+
 #include <c-ctype.h>
+#include <flexmember.h>
 
 #include "lisp.h"
 #include "frame.h"
@@ -55,6 +57,11 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #ifdef HAVE_WINDOW_SYSTEM
 #include TERM_HEADER
 #endif /* HAVE_WINDOW_SYSTEM */
+
+/* Work around GCC bug 54561.  */
+#if GNUC_PREREQ (4, 3, 0)
+# pragma GCC diagnostic ignored "-Wclobbered"
+#endif
 
 #ifdef HAVE_X_WINDOWS
 typedef struct x_bitmap_record Bitmap_Record;
@@ -2518,7 +2525,7 @@ xbm_image_p (Lisp_Object object)
 	      if (STRINGP (elt))
 		{
 		  if (SCHARS (elt)
-		      < (width + BITS_PER_CHAR - 1) / BITS_PER_CHAR)
+		      < (width + CHAR_BIT - 1) / CHAR_BIT)
 		    return 0;
 		}
 	      else if (BOOL_VECTOR_P (elt))
@@ -2533,7 +2540,7 @@ xbm_image_p (Lisp_Object object)
       else if (STRINGP (data))
 	{
 	  if (SCHARS (data)
-	      < (width + BITS_PER_CHAR - 1) / BITS_PER_CHAR * height)
+	      < (width + CHAR_BIT - 1) / CHAR_BIT * height)
 	    return 0;
 	}
       else if (BOOL_VECTOR_P (data))
@@ -3082,7 +3089,7 @@ xbm_load (struct frame *f, struct image *img)
 	    {
 	      int i;
 	      char *p;
-	      int nbytes = (img->width + BITS_PER_CHAR - 1) / BITS_PER_CHAR;
+	      int nbytes = (img->width + CHAR_BIT - 1) / CHAR_BIT;
 
 	      SAFE_NALLOCA (bits, nbytes, img->height);
 	      p = bits;
@@ -3106,7 +3113,7 @@ xbm_load (struct frame *f, struct image *img)
             int nbytes, i;
             /* Windows mono bitmaps are reversed compared with X.  */
             invertedBits = bits;
-            nbytes = (img->width + BITS_PER_CHAR - 1) / BITS_PER_CHAR;
+            nbytes = (img->width + CHAR_BIT - 1) / CHAR_BIT;
             SAFE_NALLOCA (bits, nbytes, img->height);
             for (i = 0; i < nbytes; i++)
               bits[i] = XBM_BIT_SHUFFLE (invertedBits[i]);
@@ -3342,7 +3349,7 @@ xpm_cache_color (struct frame *f, char *color_name, XColor *color, int bucket)
   if (bucket < 0)
     bucket = xpm_color_bucket (color_name);
 
-  nbytes = offsetof (struct xpm_cached_color, name) + strlen (color_name) + 1;
+  nbytes = FLEXSIZEOF (struct xpm_cached_color, name, strlen (color_name) + 1);
   p = xmalloc (nbytes);
   strcpy (p->name, color_name);
   p->color = *color;
@@ -5897,9 +5904,8 @@ struct png_load_context
 static bool
 png_load_body (struct frame *f, struct image *img, struct png_load_context *c)
 {
-  Lisp_Object specified_file;
-  Lisp_Object NONVOLATILE specified_data;
-  FILE *NONVOLATILE fp = NULL;
+  Lisp_Object specified_file, specified_data;
+  FILE *fp = NULL;
   int x, y;
   ptrdiff_t i;
   png_struct *png_ptr;
@@ -6669,8 +6675,7 @@ static bool
 jpeg_load_body (struct frame *f, struct image *img,
 		struct my_jpeg_error_mgr *mgr)
 {
-  Lisp_Object specified_file;
-  Lisp_Object NONVOLATILE specified_data;
+  Lisp_Object specified_file, specified_data;
   FILE *volatile fp = NULL;
   JSAMPARRAY buffer;
   int row_stride, x, y;
@@ -8325,8 +8330,8 @@ static struct animation_cache *
 imagemagick_create_cache (char *signature)
 {
   struct animation_cache *cache
-    = xmalloc (offsetof (struct animation_cache, signature)
-	       + strlen (signature) + 1);
+    = xmalloc (FLEXSIZEOF (struct animation_cache, signature,
+			   strlen (signature) + 1));
   cache->wand = 0;
   cache->index = 0;
   cache->next = 0;
@@ -8907,13 +8912,13 @@ and `imagemagick-types-inhibit'.  */)
 {
   Lisp_Object typelist = Qnil;
   size_t numf = 0;
-  ExceptionInfo ex;
+  ExceptionInfo *ex;
   char **imtypes;
   size_t i;
 
-  GetExceptionInfo(&ex);
-  imtypes = GetMagickList ("*", &numf, &ex);
-  DestroyExceptionInfo(&ex);
+  ex = AcquireExceptionInfo ();
+  imtypes = GetMagickList ("*", &numf, ex);
+  DestroyExceptionInfo (ex);
 
   for (i = 0; i < numf; i++)
     {
