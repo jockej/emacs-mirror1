@@ -315,9 +315,8 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "fontset.h"
 #include "blockinput.h"
 #include "xwidget.h"
-#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
 #include "overlays.h"
-#endif
+
 #ifdef HAVE_WINDOW_SYSTEM
 #include TERM_HEADER
 #endif /* HAVE_WINDOW_SYSTEM */
@@ -3566,6 +3565,7 @@ compute_stop_pos (struct it *it)
 static ptrdiff_t
 next_overlay_change (ptrdiff_t pos)
 {
+#ifdef OVERLAYS_FIX
   ptrdiff_t i, noverlays;
   ptrdiff_t endpos;
   Lisp_Object *overlays;
@@ -3588,6 +3588,8 @@ next_overlay_change (ptrdiff_t pos)
 
   SAFE_FREE ();
   return endpos;
+#endif
+  return ZV;
 }
 
 /* How many characters forward to search for a display property or
@@ -5006,7 +5008,7 @@ handle_single_display_spec (struct it *it, Lisp_Object spec, Lisp_Object object,
 	 overlay's display string/image twice.  */
       if (!NILP (overlay))
 	{
-	  ptrdiff_t ovendpos = OVERLAY_POSITION (OVERLAY_END (overlay));
+	  ptrdiff_t ovendpos = XOVERLAY (overlay)->char_end;
 
 	  if (ovendpos > CHARPOS (*position))
 	    SET_TEXT_POS (*position, ovendpos, CHAR_TO_BYTE (ovendpos));
@@ -5508,7 +5510,6 @@ handle_composition_prop (struct it *it)
 
 /* The following structure is used to record overlay strings for
    later sorting in load_overlay_strings.  */
-#if !defined(NEW_OVERLAYS) && !defined(BOTH_OVERLAYS)
 struct overlay_entry
 {
   Lisp_Object overlay;
@@ -5516,7 +5517,6 @@ struct overlay_entry
   EMACS_INT priority;
   bool after_string_p;
 };
-#endif
 
 /* Set up iterator IT from overlay strings at its current position.
    Called from handle_stop.  */
@@ -5718,7 +5718,6 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
   if (charpos <= 0)
     charpos = IT_CHARPOS (*it);
 
-#ifndef NEW_OVERLAYS
   /* Append the overlay string STRING of overlay OVERLAY to vector
      `entries' which has size `size' and currently contains `n'
      elements.  AFTER_P means STRING is an after-string of
@@ -5745,6 +5744,7 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
     }									\
   while (false)
 
+#ifdef OVERLAYS_FIX
   /* Process overlay before the overlay center.  */
   for (ov = current_buffer->overlays_before; ov; ov = ov->next)
     {
@@ -5825,29 +5825,6 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
     }
 
 #undef RECORD_OVERLAY_STRING
-#ifdef BOTH_OVERLAYS
-  struct window *sw = XWINDOW (window);
-  ptrdiff_t n1, ii, jj;
-  struct overlay_entry entriesbuf1[20];
-  ptrdiff_t size1 = ARRAYELTS (entriesbuf);
-  overlay_tree_load_overlays (current_buffer->overlays_root,
-                              charpos, &size, &entries, &n, sw);
-  eassert (n1 == n);
-  for (ii = 0; ii < n; ii++) {
-    bool found = false;
-    struct overlay_entry *oe1 = &entries[ii];
-    for (jj = 0; jj < n; jj++) {
-      struct overlay_entry *oe2 = &entries1[jj];
-      if (*oe1 == *oe2)
-        found = true;
-    }
-    eassert (found);
-  }
-#endif
-#else  /* if NEW_OVERLAYS is defined */
-  struct window *sw = XWINDOW (window);
-  overlay_tree_load_overlays (current_buffer->overlays_root,
-                              charpos, &size, &entries, &n, sw);
 #endif
 
   /* Sort entries.  */
@@ -5874,7 +5851,6 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
 }
 
 
-
 /* Get the first chunk of overlay strings at IT's current buffer
    position, or at CHARPOS if that is > 0.  Value is true if at
    least one overlay string was found.  */
@@ -5882,6 +5858,7 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
 static bool
 get_overlay_strings_1 (struct it *it, ptrdiff_t charpos, bool compute_stop_p)
 {
+#ifdef OVERLAYS_FIX
   /* Get the first OVERLAY_STRING_CHUNK_SIZE overlay strings to
      process.  This fills IT->overlay_strings with strings, and sets
      IT->n_overlay_strings to the total number of strings to process.
@@ -5957,7 +5934,7 @@ get_overlay_strings_1 (struct it *it, ptrdiff_t charpos, bool compute_stop_p)
 	}
       return true;
     }
-
+#endif
   it->current.overlay_string_index = -1;
   return false;
 }
@@ -6408,7 +6385,7 @@ back_to_previous_visible_line_start (struct it *it)
 	    && !NILP (val = get_char_property_and_overlay
 		      (make_number (pos), Qdisplay, Qnil, &overlay))
 	    && (OVERLAYP (overlay)
-		? (beg = OVERLAY_POSITION (OVERLAY_START (overlay)))
+		? (beg = XOVERLAY (overlay)->char_start)
 		: get_property_and_range (pos, Qdisplay, &val, &beg, &end, Qnil)))
 	  {
 	    RESTORE_IT (it, it, it2data);
@@ -9490,7 +9467,7 @@ move_it_to (struct it *it, ptrdiff_t to_charpos, int to_x, int to_y, int to_vpos
 	}
 
       /* Reset/increment for the next run.  */
-      recenter_overlay_lists (current_buffer, IT_CHARPOS (*it));
+      /* recenter_overlay_lists (current_buffer, IT_CHARPOS (*it)); */
       it->current_x = line_start_x;
       line_start_x = 0;
       it->hpos = 0;
@@ -13256,11 +13233,11 @@ text_outside_line_unchanged_p (struct window *w,
 	 just BEG/END_UNCHANGED.)  */
       if (unchanged_p)
 	{
-	  if (BEG + BEG_UNCHANGED == start
-	      && overlay_touches_p (start))
+	  if (BEG + BEG_UNCHANGED == start)
+	      /* && overlay_touches_p (start)) */
 	    unchanged_p = false;
-	  if (END_UNCHANGED == end
-	      && overlay_touches_p (Z - end))
+	  if (END_UNCHANGED == end)
+	      /* && overlay_touches_p (Z - end)) */
 	    unchanged_p = false;
 	}
 
@@ -16993,8 +16970,8 @@ redisplay_window (Lisp_Object window, bool just_this_one_p)
 	  try_window (window, it.current.pos, 0);
 	}
       else if (scroll_conservatively > SCROLL_LIMIT
-	       && (it.method == GET_FROM_STRING
-		   || overlay_touches_p (IT_CHARPOS (it)))
+	       && (it.method == GET_FROM_STRING)
+		   /* || overlay_touches_p (IT_CHARPOS (it)) */
 	       && IT_CHARPOS (it) < ZV)
 	{
 	  /* If the window starts with a before-string that spans more
@@ -20571,7 +20548,7 @@ display_line (struct it *it)
      can't really hurt too much, or we call it on lines which appear
      one after another in the buffer, in which case all calls to
      recenter_overlay_lists but the first will be pretty cheap.  */
-  recenter_overlay_lists (current_buffer, IT_CHARPOS (*it));
+  /* recenter_overlay_lists (current_buffer, IT_CHARPOS (*it)); */
 
   /* Move over display elements that are not visible because we are
      hscrolled.  This may stop at an x-position < IT->first_visible_x

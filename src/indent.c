@@ -226,7 +226,9 @@ skip_invisible (ptrdiff_t pos, ptrdiff_t *next_boundary_p, ptrdiff_t to, Lisp_Ob
   XSETBUFFER (buffer, current_buffer);
 
   /* Give faster response for overlay lookup near POS.  */
+#ifdef OVERLAYS_REMOVE
   recenter_overlay_lists (current_buffer, pos);
+#endif
 
   /* We must not advance farther than the next overlay change.
      The overlay change might change the invisible property;
@@ -501,7 +503,8 @@ check_display_width (ptrdiff_t pos, ptrdiff_t col, ptrdiff_t *endpos)
 	{
 	  ptrdiff_t start;
 	  if (OVERLAYP (overlay))
-	    *endpos = OVERLAY_POSITION (OVERLAY_END (overlay));
+	    /* *endpos = OVERLAY_POSITION (OVERLAY_END (overlay)); */
+            *endpos = XOVERLAY (overlay)->char_end;
 	  else
 	    get_property_and_range (pos, Qdisplay, &val, &start, endpos, Qnil);
 

@@ -464,7 +464,7 @@ overlays_around (EMACS_INT pos, Lisp_Object *vec, ptrdiff_t len)
   struct Lisp_Overlay *tail;
   ptrdiff_t startpos, endpos;
   ptrdiff_t idx = 0;
-
+#ifdef OVERLAYS_FIX
   for (tail = current_buffer->overlays_before; tail; tail = tail->next)
     {
       XSETMISC (overlay, tail);
@@ -501,7 +501,7 @@ overlays_around (EMACS_INT pos, Lisp_Object *vec, ptrdiff_t len)
 	  idx++;
 	}
     }
-
+#endif
   return idx;
 }
 
@@ -561,13 +561,22 @@ at POSITION.  */)
 	  tem = Foverlay_get (ol, prop);
 	  if (!NILP (tem))
 	    {
+#ifdef OVERLAYS_REMOVE
 	      /* Check the overlay is indeed active at point.  */
 	      Lisp_Object start = OVERLAY_START (ol), finish = OVERLAY_END (ol);
 	      if ((OVERLAY_POSITION (start) == posn
 		   && XMARKER (start)->insertion_type == 1)
 		  || (OVERLAY_POSITION (finish) == posn
 		      && XMARKER (finish)->insertion_type == 0))
-		; /* The overlay will not cover a char inserted at point.  */
+		; /* The overlay will not cover a char inserted at
+      point.  */
+#else
+              if ((XOVERLAY (ol)->char_start == posn
+                   && XOVERLAY (ol)->start_insertion_type)
+                  || (XOVERLAY (ol)->char_end == posn
+                      && XOVERLAY (ol)->end_insertion_type))
+                ;
+#endif
 	      else
 		{
 		  SAFE_FREE ();
@@ -5063,7 +5072,9 @@ Transposing beyond buffer boundaries is an error.  */)
       transpose_markers (start1, end1, start2, end2,
 			 start1_byte, start1_byte + len1_byte,
 			 start2_byte, start2_byte + len2_byte);
+#ifdef OVERLAYS_FIX
       fix_start_end_in_overlays (start1, end2);
+#endif
     }
   else
     {

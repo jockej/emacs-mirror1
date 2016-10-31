@@ -5957,8 +5957,11 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
       if (!NILP (prop))
 	merge_face_ref (f, prop, attrs, true, 0);
 
+#ifdef OVERLAYS_REMOVE
       oend = OVERLAY_END (overlay_vec[i]);
       oendpos = OVERLAY_POSITION (oend);
+#endif
+      oend = XOVERLAY (overlay_vec[i])->char_end;
       if (oendpos < endpos)
 	endpos = oendpos;
     }

@@ -27,9 +27,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "character.h"
 #include "lisp.h"
 
-#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
 extern struct Lisp_Overlay *OVERLAY_SENTINEL;
-#endif
 
 INLINE_HEADER_BEGIN
 
@@ -866,22 +864,9 @@ struct buffer
   /* Non-zero whenever the narrowing is changed in this buffer.  */
   bool_bf clip_changed : 1;
 
-#ifndef NEW_OVERLAYS
-  /* List of overlays that end at or before the current center,
-     in order of end-position.  */
-  struct Lisp_Overlay *overlays_before;
-
-  /* List of overlays that end after  the current center,
-     in order of start-position.  */
-  struct Lisp_Overlay *overlays_after;
-
-  /* Position where the overlay lists are centered.  */
-  ptrdiff_t overlay_center;
-#endif
-
-#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
+  /* root of the overlay tree.  */
   struct Lisp_Overlay *overlays_root;
-#endif
+
   /* Changes in the buffer are recorded here for undo, and t means
      don't record anything.  This information belongs to the base
      buffer of an indirect buffer.  But we can't store it in the
@@ -1186,17 +1171,7 @@ set_buffer_intervals (struct buffer *b, INTERVAL i)
 INLINE bool
 buffer_has_overlays (void)
 {
-#ifdef NEW_OVERLAYS
-  bool ret = current_buffer->overlays_root != OVERLAY_SENTINEL;
-#else
-  bool ret = current_buffer->overlays_before ||
-    current_buffer->overlays_after;
-#ifdef BOTH_OVERLAYS
-  eassert (ret == (current_buffer->overlays_root !=
-                   OVERLAY_SENTINEL));
-#endif
-#endif
-  return ret;
+  return current_buffer->overlays_root != OVERLAY_SENTINEL;
 }
 
 /* Return character code of multi-byte form at byte position POS.  If POS
@@ -1234,28 +1209,14 @@ buffer_window_count (struct buffer *b)
   return b->window_count;
 }
 
-#ifndef NEW_OVERLAYS
-/* Overlays */
-
-/* Return the marker that stands for where OV starts in the buffer.  */
-
-#define OVERLAY_START(OV) XOVERLAY (OV)->start
-
-/* Return the marker that stands for where OV ends in the buffer.  */
-
-#define OVERLAY_END(OV) XOVERLAY (OV)->end
-
 /* Return the plist of overlay OV.  */
 
 #define OVERLAY_PLIST(OV) XOVERLAY (OV)->plist
 
-/* Return the actual buffer position for the marker P.
-   We assume you know which buffer it's pointing into.  */
+/* #define OVERLAY_START(OV) (XOVERLAY (OV)->char_start) */
 
-#define OVERLAY_POSITION(P) \
- (MARKERP (P) ? marker_position (P) : (emacs_abort (), 0))
+/* #define OVERLAY_END(OV) (XOVERLAY (OV)->char_end) */
 
-#endif
 
 /***********************************************************************
 			Buffer-local Variables

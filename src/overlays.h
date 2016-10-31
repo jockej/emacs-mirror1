@@ -1,25 +1,35 @@
-
 #ifndef OVERLAYS_H
 #define OVERLAYS_H
 
 #include <config.h>
 #include "lisp.h"
 
+#ifdef CHECK_OVERLAY_TREE
+#define CHECK_TREE_CONSISTENCY(TREE, PARENT) \
+  check_tree_consistency (TREE, PARENT)
+#define CHECK_PARENTS(ROOT, PARENT) \
+  check_parents (ROOT, PARENT)
+void
+check_tree_consistency (struct Lisp_Overlay *root, Lisp_Object parent);
+
+void
+check_parents (struct Lisp_Overlay *root, Lisp_Object parent);
+
+void
+check_valid_aa_tree (struct Lisp_Overlay *root);
+#else
+#define CHECK_TREE_CONSISTENCY(TREE, PARENT)
+#define CHECK_PARENTS(ROOT, PARENT)
+#endif
+
 extern struct Lisp_Overlay OVERLAY_SENTINEL_NODE;
 
 extern struct Lisp_Overlay * OVERLAY_SENTINEL;
 
-struct overlay_entry
-{
-  Lisp_Object overlay;
-  Lisp_Object string;
-  EMACS_INT priority;
-  bool after_string_p;
-};
-
 void
 overlay_tree_insert (struct Lisp_Overlay **tree,
-                     struct Lisp_Overlay *node);
+                     struct Lisp_Overlay *node,
+                     Lisp_Object buffer);
 
 void
 overlay_tree_delete (struct Lisp_Overlay **tree,
@@ -35,41 +45,43 @@ ptrdiff_t
 overlay_tree_all (struct Lisp_Overlay *tree, ptrdiff_t *vec_size,
                   Lisp_Object **vec_ptr);
 
-ptrdiff_t
+void
 overlay_tree_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
-                 ptrdiff_t *next_ptr, ptrdiff_t *prev_ptr,
                  ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
-                 bool chane_req);
+                 ptrdiff_t *idx);
 
 void
-overlay_tree_zero_size_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
-                           Lisp_Object hit_list);
+overlay_tree_in (struct Lisp_Overlay *tree, ptrdiff_t beg,
+                 ptrdiff_t end, ptrdiff_t buf_end,
+                 ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
+                 ptrdiff_t *idx);
+
+void
+overlay_tree_next_change(struct Lisp_Overlay *tree,
+                         ptrdiff_t pos, ptrdiff_t *best);
+
+void
+overlay_tree_prev_change(struct Lisp_Overlay *tree,
+                         ptrdiff_t pos, ptrdiff_t *best);
 
 ptrdiff_t
 overlay_tree_adjust_for_insert (struct Lisp_Overlay *tree,
                                 ptrdiff_t from_char,
                                 ptrdiff_t to_char,
-                                ptrdiff_t from_byte,
-                                ptrdiff_t to_byte,
                                 bool before);
 
 ptrdiff_t
 overlay_tree_adjust_for_delete (struct Lisp_Overlay *tree,
-                                ptrdiff_t from_char, ptrdiff_t from_byte,
-                                ptrdiff_t to_char, ptrdiff_t to_byte);
+                                ptrdiff_t from_char,
+                                ptrdiff_t to_char);
 
 ptrdiff_t
 overlay_tree_adjust_for_replace (struct Lisp_Overlay *tree,
                                  ptrdiff_t from_char,
-                                 ptrdiff_t from_byte,
                                  ptrdiff_t old_chars,
-                                 ptrdiff_t old_bytes,
-                                 ptrdiff_t new_chars,
-                                 ptrdiff_t new_bytes);
+                                 ptrdiff_t new_chars);
 
-ptrdiff_t
-overlay_tree_at (struct Lisp_Overlay *tree, Lisp_Object **vecp,
-                 ptrdiff_t pos);
-
+void
+overlay_tree_copy_tree (struct buffer *from, struct buffer *to);
 
 #endif /* OVERLAYS_H */

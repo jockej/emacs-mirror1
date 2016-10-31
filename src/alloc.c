@@ -3801,23 +3801,21 @@ Lisp_Object
 build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object plist)
 {
   register Lisp_Object overlay;
+  ptrdiff_t char_start, char_end;
 
   overlay = allocate_misc (Lisp_Misc_Overlay);
-  OVERLAY_START (overlay) = start;
-  OVERLAY_END (overlay) = end;
   set_overlay_plist (overlay, plist);
-  XOVERLAY (overlay)->next = NULL;
 
-#ifdef NEW_OVERLAYS
-  XOVERLAY (overlay)->left = NULL;
-  XOVERLAY (overlay)->right = NULL;
-  ptrdiff_t char_start = XINT (Fmarker_position (start));
+  XOVERLAY (overlay)->left = OVERLAY_SENTINEL;
+  XOVERLAY (overlay)->right = OVERLAY_SENTINEL;
+  char_start = XINT (start);
   XOVERLAY (overlay)->char_start = char_start;
-  XOVERLAY (overlay)->byte_start = CHAR_TO_BYTE(char_start);
-  ptrdiff_t char_end = XINT (Fmarker_position(end));
+  char_end = XINT (end);
   XOVERLAY (overlay)->char_end = char_end;
-  XOVERLAY (overlay)->byte_end = CHAR_TO_BYTE(char_end);
-#endif
+  XOVERLAY (overlay)->parent = Qnil;
+  /* XOVERLAY (overlay)->deleted = 0; */
+  /* XOVERLAY (overlay)->byte_start = CHAR_TO_BYTE(char_start); */
+  /* XOVERLAY (overlay)->byte_end = CHAR_TO_BYTE(char_end); */
 
   return overlay;
 }
@@ -6101,7 +6099,7 @@ mark_compiled (struct Lisp_Vector *ptr)
 }
 
 /* Mark the chain of overlays starting at PTR.  */
-
+#if OVERLAYS_REMOVE
 static void
 mark_overlay (struct Lisp_Overlay *ptr)
 {
@@ -6113,6 +6111,20 @@ mark_overlay (struct Lisp_Overlay *ptr)
       XMARKER (ptr->end)->gcmarkbit = 1;
       mark_object (ptr->plist);
     }
+}
+#endif
+
+static void
+mark_overlay_tree (struct Lisp_Overlay *o)
+{
+  if (!o || o == OVERLAY_SENTINEL || o->gcmarkbit)
+    return;
+
+  /* printf("Marked overlay at %p\n", o); */
+  o->gcmarkbit = 1;
+  mark_overlay_tree(o->left);
+  mark_overlay_tree(o->right);
+  mark_object (o->plist);
 }
 
 /* Mark Lisp_Objects and special pointers in BUFFER.  */
@@ -6131,8 +6143,11 @@ mark_buffer (struct buffer *buffer)
      a special way just before the sweep phase, and after stripping
      some of its elements that are not needed any more.  */
 
+#if OVERLAYS_REMOVE
   mark_overlay (buffer->overlays_before);
   mark_overlay (buffer->overlays_after);
+#endif
+  mark_overlay_tree(buffer->overlays_root);
 
   /* If this is an indirect buffer, mark its base buffer.  */
   if (buffer->base_buffer && !VECTOR_MARKED_P (buffer->base_buffer))
@@ -6523,7 +6538,10 @@ mark_object (Lisp_Object arg)
 	  break;
 
 	case Lisp_Misc_Overlay:
-	  mark_overlay (XOVERLAY (obj));
+	  mark_overlay_tree (XOVERLAY (obj));
+          /* printf("Marked overlay (single) at %p\n", XOVERLAY(obj)); */
+          /* XMISCANY (obj)->gcmarkbit = true; */
+          /* XOVERLAY (obj)->single_mark = true; */
           break;
 
         case Lisp_Misc_Finalizer:
@@ -6902,6 +6920,7 @@ sweep_misc (void)
 
   marker_free_list = 0;
 
+  /* printf("Sweeping misc\n"); */
   for (mblk = marker_block; mblk; mblk = *mprev)
     {
       register int i;
@@ -6915,6 +6934,8 @@ sweep_misc (void)
                 unchain_marker (&mblk->markers[i].m.u_marker);
               else if (mblk->markers[i].m.u_any.type == Lisp_Misc_Finalizer)
                 unchain_finalizer (&mblk->markers[i].m.u_finalizer);
+              /* else if (mblk->markers[i].m.u_any.type == Lisp_Misc_Overlay) */
+                /* printf("Swept overlay at %p\n", &(mblk->markers[i].m)); */
 #ifdef HAVE_MODULES
 	      else if (mblk->markers[i].m.u_any.type == Lisp_Misc_User_Ptr)
 		{

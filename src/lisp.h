@@ -2101,30 +2101,23 @@ struct Lisp_Overlay
   {
     ENUM_BF (Lisp_Misc_Type) type : 16;	/* = Lisp_Misc_Overlay */
     bool_bf gcmarkbit : 1;
+    unsigned spacer : 11;
 
-#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
     bool_bf start_insertion_type : 1;
     bool_bf end_insertion_type : 1;
-    unsigned spacer : 13;
-#else
-    unsigned spacer : 15;
-#endif
+    bool_bf deleted : 1;
+    bool_bf single_mark: 1;
 
-    struct Lisp_Overlay *next;
-    Lisp_Object start;
-    Lisp_Object end;
     Lisp_Object plist;
 
-#if defined(NEW_OVERLAYS) || defined(BOTH_OVERLAYS)
     ptrdiff_t char_start, char_end;
-    ptrdiff_t byte_start, byte_end;
+    /* ptrdiff_t byte_start, byte_end; */
     ptrdiff_t max;
 
     /* For the tree.  */
     Lisp_Object parent; /* buffer or parent node */
     struct Lisp_Overlay *left, *right;
     unsigned level;
-#endif
   };
 
 /* Types of data which may be saved in a Lisp_Save_Value.  */

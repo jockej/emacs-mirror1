@@ -3260,7 +3260,11 @@ decide_coding_unwind (Lisp_Object unwind_data)
 
   set_buffer_internal (XBUFFER (buffer));
   adjust_markers_for_delete (BEG, BEG_BYTE, Z, Z_BYTE);
+  overlay_tree_adjust_for_delete (current_buffer->overlays_root,
+                                  BEG, Z);
+#ifdef OVERLAYS_REMOVE
   adjust_overlays_for_delete (BEG, Z - BEG);
+#endif
   set_buffer_intervals (current_buffer, NULL);
   TEMP_SET_PT_BOTH (BEG, BEG_BYTE);
 
@@ -3663,8 +3667,9 @@ by calling `format-decode', which see.  */)
 		  bset_read_only (buf, Qnil);
 		  bset_filename (buf, Qnil);
 		  bset_undo_list (buf, Qt);
-		  eassert (buf->overlays_before == NULL);
-		  eassert (buf->overlays_after == NULL);
+		  /* eassert (buf->overlays_before == NULL); */
+		  /* eassert (buf->overlays_after == NULL); */
+                  eassert (buf->overlays_root == OVERLAY_SENTINEL);
 
 		  set_buffer_internal (buf);
 		  Ferase_buffer ();

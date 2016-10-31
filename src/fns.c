@@ -2325,10 +2325,15 @@ internal_equal (Lisp_Object o1, Lisp_Object o2, int depth, bool props,
 	return 0;
       if (OVERLAYP (o1))
 	{
+#ifdef OVERLAYS_REMOVE
 	  if (!internal_equal (OVERLAY_START (o1), OVERLAY_START (o2),
 			       depth + 1, props, ht)
 	      || !internal_equal (OVERLAY_END (o1), OVERLAY_END (o2),
 				  depth + 1, props, ht))
+#endif
+            if (!(XOVERLAY (o1)->char_start == XOVERLAY (o2)->char_start
+                  && XOVERLAY (o1)->char_end == XOVERLAY (o2)->char_end)
+                && EQ (buffer_of_overlay (o1), buffer_of_overlay (o2)))
 	    return 0;
 	  o1 = XOVERLAY (o1)->plist;
 	  o2 = XOVERLAY (o2)->plist;
