@@ -2115,7 +2115,8 @@ struct Lisp_Overlay
     ptrdiff_t max;
 
     /* For the tree.  */
-    Lisp_Object parent; /* buffer or parent node */
+    /* Lisp_Object parent; /\* buffer or parent node *\/ */
+    Lisp_Object buf;
     struct Lisp_Overlay *left, *right;
     unsigned level;
   };
@@ -3750,7 +3751,7 @@ extern Lisp_Object make_save_funcptr_ptr_obj (void (*) (void), void *,
 					      Lisp_Object);
 extern Lisp_Object make_save_memory (Lisp_Object *, ptrdiff_t);
 extern void free_save_value (Lisp_Object);
-extern Lisp_Object build_overlay (Lisp_Object, Lisp_Object, Lisp_Object);
+extern Lisp_Object build_overlay (Lisp_Object, Lisp_Object, Lisp_Object, Lisp_Object);
 extern void free_marker (Lisp_Object);
 extern void free_cons (struct Lisp_Cons *);
 extern void init_alloc_once (void);

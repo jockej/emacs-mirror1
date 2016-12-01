@@ -627,8 +627,13 @@ get_char_property_and_overlay (Lisp_Object position, register Lisp_Object prop, 
 
       set_buffer_temp (XBUFFER (object));
 
-      USE_SAFE_ALLOCA;
-      GET_OVERLAYS_AT (XINT (position), overlay_vec, noverlays, NULL, false);
+      /* USE_SAFE_ALLOCA; */
+      /* GET_OVERLAYS_AT (XINT (position), overlay_vec, noverlays, NULL, false); */
+      ptrdiff_t overlay_vec_len = 40;
+      overlay_vec = xnmalloc (overlay_vec_len, sizeof (Lisp_Object));
+      noverlays = overlays_at (XINT (position), false, &overlay_vec,
+                               &overlay_vec_len, NULL, NULL, false);
+
       noverlays = sort_overlays (overlay_vec, noverlays, w);
 
       set_buffer_temp (obuf);
@@ -642,11 +647,11 @@ get_char_property_and_overlay (Lisp_Object position, register Lisp_Object prop, 
 	      if (overlay)
 		/* Return the overlay we got the property from.  */
 		*overlay = overlay_vec[noverlays];
-	      SAFE_FREE ();
+	      /* SAFE_FREE (); */
 	      return tem;
 	    }
 	}
-      SAFE_FREE ();
+      /* SAFE_FREE (); */
     }
 
   if (overlay)

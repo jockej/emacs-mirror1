@@ -3589,7 +3589,13 @@ next_overlay_change (ptrdiff_t pos)
   SAFE_FREE ();
   return endpos;
 #endif
-  return ZV;
+  ptrdiff_t next_chg = ZV - pos;
+  overlay_tree_next_change (current_buffer->overlays_root, pos,
+                            &next_chg);
+  /* printf("pos: %ld, next_change: %ld, ZV: %ld\n", pos, pos + next_chg, ZV); */
+  return pos + next_chg;
+/* #endif */
+  /* return ZV; */
 }
 
 /* How many characters forward to search for a display property or

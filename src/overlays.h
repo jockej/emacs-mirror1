@@ -5,21 +5,11 @@
 #include "lisp.h"
 
 #ifdef CHECK_OVERLAY_TREE
-#define CHECK_TREE_CONSISTENCY(TREE, PARENT) \
-  check_tree_consistency (TREE, PARENT)
-#define CHECK_PARENTS(ROOT, PARENT) \
-  check_parents (ROOT, PARENT)
-void
-check_tree_consistency (struct Lisp_Overlay *root, Lisp_Object parent);
-
-void
-check_parents (struct Lisp_Overlay *root, Lisp_Object parent);
-
+#define CHECK_TREE(TREE)  check_valid_aa_tree (TREE)
 void
 check_valid_aa_tree (struct Lisp_Overlay *root);
 #else
-#define CHECK_TREE_CONSISTENCY(TREE, PARENT)
-#define CHECK_PARENTS(ROOT, PARENT)
+#define CHECK_TREE(TREE)
 #endif
 
 extern struct Lisp_Overlay OVERLAY_SENTINEL_NODE;
@@ -28,12 +18,12 @@ extern struct Lisp_Overlay * OVERLAY_SENTINEL;
 
 void
 overlay_tree_insert (struct Lisp_Overlay **tree,
-                     struct Lisp_Overlay *node,
-                     Lisp_Object buffer);
+                     struct Lisp_Overlay *node);
 
 void
 overlay_tree_delete (struct Lisp_Overlay **tree,
-                     struct Lisp_Overlay *node);
+                     struct Lisp_Overlay *node,
+                     struct Lisp_Overlay *parent);
 
 void
 overlay_tree_drop_all (struct buffer *buf);
@@ -51,6 +41,11 @@ overlay_tree_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
                  ptrdiff_t *idx);
 
 void
+overlay_tree_evap (struct Lisp_Overlay *tree, ptrdiff_t pos,
+                   ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
+                   ptrdiff_t *idx);
+
+void
 overlay_tree_in (struct Lisp_Overlay *tree, ptrdiff_t beg,
                  ptrdiff_t end, ptrdiff_t buf_end,
                  ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
@@ -64,8 +59,8 @@ void
 overlay_tree_prev_change(struct Lisp_Overlay *tree,
                          ptrdiff_t pos, ptrdiff_t *best);
 
-ptrdiff_t
-overlay_tree_adjust_for_insert (struct Lisp_Overlay *tree,
+void
+overlay_tree_adjust_for_insert (struct Lisp_Overlay **tree,
                                 ptrdiff_t from_char,
                                 ptrdiff_t to_char,
                                 bool before);

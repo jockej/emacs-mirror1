@@ -535,6 +535,7 @@ at POSITION.  */)
       struct buffer *obuf = current_buffer;
       USE_SAFE_ALLOCA;
 
+/* #ifdef OVERLAYS_FIX */
       set_buffer_temp (XBUFFER (object));
 
       /* First try with room for 40 overlays.  */
@@ -553,6 +554,7 @@ at POSITION.  */)
       noverlays = sort_overlays (overlay_vec, noverlays, NULL);
 
       set_buffer_temp (obuf);
+/* #endif */
 
       /* Now check the overlays in order of decreasing priority.  */
       while (--noverlays >= 0)
@@ -5072,7 +5074,7 @@ Transposing beyond buffer boundaries is an error.  */)
       transpose_markers (start1, end1, start2, end2,
 			 start1_byte, start1_byte + len1_byte,
 			 start2_byte, start2_byte + len2_byte);
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_REMOVE
       fix_start_end_in_overlays (start1, end2);
 #endif
     }

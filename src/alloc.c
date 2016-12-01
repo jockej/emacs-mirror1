@@ -3798,7 +3798,8 @@ free_save_value (Lisp_Object save)
 /* Return a Lisp_Misc_Overlay object with specified START, END and PLIST.  */
 
 Lisp_Object
-build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object plist)
+build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object buffer,
+               Lisp_Object plist)
 {
   register Lisp_Object overlay;
   ptrdiff_t char_start, char_end;
@@ -3808,11 +3809,9 @@ build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object plist)
 
   XOVERLAY (overlay)->left = OVERLAY_SENTINEL;
   XOVERLAY (overlay)->right = OVERLAY_SENTINEL;
-  char_start = XINT (start);
-  XOVERLAY (overlay)->char_start = char_start;
-  char_end = XINT (end);
-  XOVERLAY (overlay)->char_end = char_end;
-  XOVERLAY (overlay)->parent = Qnil;
+  XOVERLAY (overlay)->char_start = XINT (start);
+  XOVERLAY (overlay)->char_end = XINT (end);
+  XOVERLAY (overlay)->buf = buffer;
   /* XOVERLAY (overlay)->deleted = 0; */
   /* XOVERLAY (overlay)->byte_start = CHAR_TO_BYTE(char_start); */
   /* XOVERLAY (overlay)->byte_end = CHAR_TO_BYTE(char_end); */

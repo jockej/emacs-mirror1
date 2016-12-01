@@ -593,26 +593,6 @@ even if it is dead.  The return value is never nil.  */)
   return buffer;
 }
 
-INLINE static void
-insert_overlay_in_buffer_tree (struct buffer *b, Lisp_Object overlay)
-{
-  Lisp_Object buf;
-  eassert (OVERLAYP (overlay));
-  struct Lisp_Overlay *o = XOVERLAY (overlay);
-  XSETBUFFER(buf, b);
-  if (b->overlays_root == OVERLAY_SENTINEL)
-    {
-      overlay_tree_insert (&b->overlays_root, o, buf);
-      eassert (b->overlays_root == o);
-      /* XSETBUFFER(b->overlays_root->parent, b); */
-    }
-  else
-    {
-      overlay_tree_insert (&b->overlays_root, o, buf);
-    }
-  eassert (EQ (b->overlays_root->parent, buf));
-}
-
 /* Return a list of overlays which is a copy of the overlay list
    LIST, but for buffer B.  */
 #ifdef OVERLAYS_FIX
@@ -2733,7 +2713,7 @@ overlays_at (EMACS_INT pos, bool extend, Lisp_Object **vec_ptr,
 	     ptrdiff_t *len_ptr,
 	     ptrdiff_t *next_ptr, ptrdiff_t *prev_ptr, bool change_req)
 {
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_FIXED
   Lisp_Object overlay, start, end;
   struct Lisp_Overlay *tail;
   ptrdiff_t idx = 0;
@@ -2873,7 +2853,7 @@ overlays_in (EMACS_INT beg, EMACS_INT end, bool extend,
 	     Lisp_Object **vec_ptr, ptrdiff_t *len_ptr,
 	     ptrdiff_t *next_ptr, ptrdiff_t *prev_ptr)
 {
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_FIXED
   Lisp_Object overlay, ostart, oend;
   struct Lisp_Overlay *tail;
   ptrdiff_t idx = 0;
@@ -2993,7 +2973,7 @@ overlays_in (EMACS_INT beg, EMACS_INT end, bool extend,
 
 /* Return true if there exists an overlay with a non-nil
    `mouse-face' property overlapping OVERLAY.  */
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_FIXED
 #endif
 bool
 mouse_face_overlay_overlaps (Lisp_Object overlay)
@@ -3032,19 +3012,16 @@ mouse_face_overlay_overlaps (Lisp_Object overlay)
 
 
 
-bool
-overlay_touches_internal (struct Lisp_Overlay *tree,
-                          ptrdiff_t pos)
+static bool
+overlay_touches_internal (struct Lisp_Overlay *tree, ptrdiff_t pos)
 {
-  if (tree == OVERLAY_SENTINEL ||
-      tree->max < pos)
+  if (tree == OVERLAY_SENTINEL || tree->max < pos)
     return false;
 
-  if (tree->char_start == pos ||
-      tree->char_end == pos)
+  if (tree->char_start == pos || tree->char_end == pos)
     return true;
 
-  if (! (tree->char_start > pos))
+  if (tree->char_start <= pos)
     if (overlay_touches_internal (tree->left, pos))
       return true;
   return overlay_touches_internal (tree->right, pos);
@@ -3054,7 +3031,7 @@ overlay_touches_internal (struct Lisp_Overlay *tree,
 bool
 overlay_touches_p (ptrdiff_t pos)
 {
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_FIXED
 #endif
   /* Lisp_Object overlay; */
   /* struct Lisp_Overlay *tail; */
@@ -3282,6 +3259,38 @@ record_overlay_string (struct sortstrlist *ssl, Lisp_Object str,
     }
 }
 
+static void
+record_overlay_strings (struct Lisp_Overlay *tree, struct window *w,
+                        ptrdiff_t pos)
+{
+  Lisp_Object overlay, window, str;
+
+  if (tree == OVERLAY_SENTINEL || tree->max < pos)
+    return;
+
+  window = Foverlay_get (overlay, Qwindow);
+  if (! (WINDOWP (window) && XWINDOW (window) != w))
+    {
+      XSETMISC (overlay, tree);
+      if (tree->char_start == pos
+          && (str = Foverlay_get (overlay, Qbefore_string), STRINGP (str)))
+        record_overlay_string (&overlay_heads, str,
+                               (tree->char_start == tree->char_end
+                                ? Foverlay_get (overlay, Qafter_string) : Qnil),
+                               Foverlay_get (overlay, Qpriority),
+                               tree->char_end - tree->char_start);
+      else if (tree->char_end == pos
+               && (str = Foverlay_get (overlay, Qafter_string), STRINGP (str)))
+        record_overlay_string (&overlay_tails, str, Qnil,
+                               Foverlay_get (overlay, Qpriority),
+                               tree->char_end - tree->char_start);
+    }
+
+  if (tree->char_start <= pos)
+    record_overlay_strings (tree->right, w, pos);
+  record_overlay_strings (tree->left, w, pos);
+}
+
 /* Concatenate the strings associated with overlays that begin or end
    at POS, ignoring overlays that are specific to windows other than W.
    The strings are concatenated in the appropriate order: shorter
@@ -3298,14 +3307,14 @@ record_overlay_string (struct sortstrlist *ssl, Lisp_Object str,
 ptrdiff_t
 overlay_strings (ptrdiff_t pos, struct window *w, unsigned char **pstr)
 {
-#ifdef OVERLAYS_FIX
-  Lisp_Object overlay, window, str;
-  struct Lisp_Overlay *ov;
-  ptrdiff_t startpos, endpos;
+  /* Lisp_Object overlay, window, str; */
+  /* struct Lisp_Overlay *ov; */
+  /* ptrdiff_t startpos, endpos; */
   bool multibyte = ! NILP (BVAR (current_buffer, enable_multibyte_characters));
 
   overlay_heads.used = overlay_heads.bytes = 0;
   overlay_tails.used = overlay_tails.bytes = 0;
+#ifdef OVERLAYS_FIXED
   for (ov = current_buffer->overlays_before; ov; ov = ov->next)
     {
       XSETMISC (overlay, ov);
@@ -3362,6 +3371,10 @@ overlay_strings (ptrdiff_t pos, struct window *w, unsigned char **pstr)
 			       Foverlay_get (overlay, Qpriority),
 			       endpos - startpos);
     }
+#endif
+
+  record_overlay_strings (current_buffer->overlays_root, w, pos);
+
   if (overlay_tails.used > 1)
     qsort (overlay_tails.buf, overlay_tails.used, sizeof (struct sortstr),
 	   cmp_for_strings);
@@ -3414,8 +3427,7 @@ overlay_strings (ptrdiff_t pos, struct window *w, unsigned char **pstr)
 	*pstr = overlay_str_buf;
       return total;
     }
-#endif
-  return 0;
+   return 0;
 }
 
 
@@ -3695,14 +3707,14 @@ for the rear of the overlay advance when text is inserted there
 
   b = XBUFFER (buffer);
 
-  overlay = build_overlay (beg, end, Qnil);
+  overlay = build_overlay (beg, end, buffer, Qnil);
   eassert (OVERLAYP (overlay));
 
-  XOVERLAY (overlay)->start_insertion_type = !NILP (front_advance);
-  XOVERLAY (overlay)->end_insertion_type = !NILP (rear_advance);
+  struct Lisp_Overlay *o = XOVERLAY (overlay);
+  o->start_insertion_type = !NILP (front_advance);
+  o->end_insertion_type = !NILP (rear_advance);
 
-  insert_overlay_in_buffer_tree(b, overlay);
-
+  overlay_tree_insert(&b->overlays_root, o);
   return overlay;
 }
 
@@ -3776,9 +3788,9 @@ buffer.  */)
       old_start = XOVERLAY (overlay)->char_start;
       old_end = XOVERLAY (overlay)->char_end;
       /* printf("Deleteing overlay at %p in move\n", XOVERLAY (OVERLAY)); */
-      CHECK_TREE_CONSISTENCY (ob->overlays_root, obuffer);
-      overlay_tree_delete(&ob->overlays_root, XOVERLAY (overlay));
-      CHECK_TREE_CONSISTENCY(ob->overlays_root, obuffer);
+      CHECK_TREE (ob->overlays_root);
+      overlay_tree_delete(&ob->overlays_root, XOVERLAY (overlay), NULL);
+      CHECK_TREE (ob->overlays_root);
     }
 
   new_start = clip_to_bounds (BUF_BEG (b), XINT (beg), BUF_Z (b));
@@ -3813,9 +3825,9 @@ buffer.  */)
     return unbind_to (count, Fdelete_overlay (overlay));
 
   /* printf("Moving overlay at %p\n", XOVERLAY (overlay)); */
-  CHECK_TREE_CONSISTENCY (b->overlays_root, buffer);
-  insert_overlay_in_buffer_tree(b, overlay);
-  CHECK_TREE_CONSISTENCY (b->overlays_root, buffer);
+  struct Lisp_Overlay *o = XOVERLAY (overlay);
+  o->buf = buffer;
+  overlay_tree_insert(&b->overlays_root, o);
 
   return unbind_to (count, overlay);
 }
@@ -3838,9 +3850,10 @@ DEFUN ("delete-overlay", Fdelete_overlay, Sdelete_overlay, 1, 1, 0,
   specbind (Qinhibit_quit, Qt);
 
   /* printf("Fdelete_overlay at %p\n", XOVERLAY (overlay)); */
-  CHECK_TREE_CONSISTENCY (b->overlays_root, buffer);
-  overlay_tree_delete (&b->overlays_root, XOVERLAY (overlay));
-  CHECK_TREE_CONSISTENCY (b->overlays_root, buffer);
+  CHECK_TREE (b->overlays_root);
+  /* printf("Fdelete_overlay, tree=%p, *tree=%p\n", &b->overlays_root, b->overlays_root); */
+  overlay_tree_delete (&b->overlays_root, XOVERLAY (overlay), NULL);
+  CHECK_TREE (b->overlays_root);
 
   /* When deleting an overlay with before or after strings, turn off
      display optimizations for the affected buffer, on the basis that
@@ -3918,7 +3931,6 @@ If SORTED is non-nil, then sort them by decreasing priority.  */)
     return Qnil;
 
   len = 10;
-  /* We can't use alloca here because overlays_at can call xrealloc.  */
   overlay_vec = xmalloc (len * sizeof *overlay_vec);
 
   overlay_tree_at (current_buffer->overlays_root, XINT (pos), &len,
@@ -3976,7 +3988,7 @@ If there are no overlay boundaries from POS to (point-max),
 the value is (point-max).  */)
   (Lisp_Object pos)
 {
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_FIXED
   ptrdiff_t i, len, noverlays;
   ptrdiff_t endpos;
   Lisp_Object *overlay_vec;
@@ -4153,6 +4165,34 @@ add_overlay_mod_hooklist (Lisp_Object functionlist, Lisp_Object overlay)
   ASET (last_overlay_modification_hooks, last_overlay_modification_hooks_used,
 	overlay);      last_overlay_modification_hooks_used++;
 }
+#if OVERLAYS_FIX
+static void
+gather_overlay_mod_hooks (struct Lisp_Overlay *tree, ptrdiff_t beg,
+                          ptrdiff_t end, bool insertion)
+{
+  Lisp_Object prop, overlay;
+  if (tree == OVERLAY_SENTINEL || tree->max < beg)
+    return;
+
+  if (end > tree->char_start && beg < tree->char_end)
+    {
+      prop = lookup_char_property (tree->plist,
+                                   Qmodification_hooks, 0);
+      if (! NILP (prop))
+        {
+          XSETMISC (overlay, tree);
+          add_overlay_mod_hooklist (prop, overlay);
+        }
+    }
+  if (insertion)
+    {
+      if (tree->char_start ==
+
+
+
+          }
+}
+#endif
 
 /* Run the modification-hooks of overlays that include
    any part of the text in START to END.
@@ -4172,7 +4212,6 @@ void
 report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
 			     Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3)
 {
-#ifdef OVERLAYS_FIX
   Lisp_Object prop, overlay;
   struct Lisp_Overlay *tail;
   /* True if this change is an insertion.  */
@@ -4191,6 +4230,8 @@ report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
 
   if (!after)
     {
+#ifdef OVERLAYS_FIX
+
       /* We are being called before a change.
 	 Scan the overlays to find the functions to call.  */
       last_overlay_modification_hooks_used = 0;
@@ -4267,9 +4308,9 @@ report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
 		add_overlay_mod_hooklist (prop, overlay);
 	    }
 	}
+      //#endif
     }
 
-  {
     /* Call the functions recorded in last_overlay_modification_hooks.
        First copy the vector contents, in case some of these hooks
        do subsequent modification of the buffer.  */
@@ -4294,6 +4335,7 @@ report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
 	  return;
       }
 
+
     USE_SAFE_ALLOCA;
     SAFE_ALLOCA_LISP (copy, size);
     memcpy (copy, XVECTOR (last_overlay_modification_hooks)->contents,
@@ -4308,8 +4350,9 @@ report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
       }
 
     SAFE_FREE ();
-  }
 #endif
+  }
+
 }
 
 static void
@@ -4331,7 +4374,7 @@ call_overlay_mod_hooks (Lisp_Object list, Lisp_Object overlay, bool after,
 void
 evaporate_overlays (ptrdiff_t pos)
 {
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_FIXED
   Lisp_Object overlay, hit_list;
   struct Lisp_Overlay *tail;
 
@@ -4363,6 +4406,20 @@ evaporate_overlays (ptrdiff_t pos)
   for (; CONSP (hit_list); hit_list = XCDR (hit_list))
     Fdelete_overlay (XCAR (hit_list));
 #endif
+
+  Lisp_Object *vec;
+  ptrdiff_t vec_size = 20, idx = 0;
+  vec = xnmalloc (vec_size, sizeof (*vec));
+  CHECK_TREE (current_buffer->overlays_root);
+  overlay_tree_evap (current_buffer->overlays_root, pos, &vec_size,
+                     &vec, &idx);
+  eassert (idx >= 0);
+  for (ptrdiff_t i = 0; i < idx; i++)
+    {
+      Fdelete_overlay (vec[i]);
+      CHECK_TREE (current_buffer->overlays_root);
+    }
+  xfree (vec);
 }
 
 /***********************************************************************
