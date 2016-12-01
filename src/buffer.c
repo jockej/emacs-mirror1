@@ -3268,10 +3268,10 @@ record_overlay_strings (struct Lisp_Overlay *tree, struct window *w,
   if (tree == OVERLAY_SENTINEL || tree->max < pos)
     return;
 
+  XSETMISC (overlay, tree);
   window = Foverlay_get (overlay, Qwindow);
   if (! (WINDOWP (window) && XWINDOW (window) != w))
     {
-      XSETMISC (overlay, tree);
       if (tree->char_start == pos
           && (str = Foverlay_get (overlay, Qbefore_string), STRINGP (str)))
         record_overlay_string (&overlay_heads, str,
