@@ -55,6 +55,9 @@ void
 overlay_tree_next_change(struct Lisp_Overlay *tree,
                          ptrdiff_t pos, ptrdiff_t *best);
 
+struct Lisp_Overlay *
+overlay_tree_next_start (struct Lisp_Overlay *tree, ptrdiff_t pos);
+
 void
 overlay_tree_prev_change(struct Lisp_Overlay *tree,
                          ptrdiff_t pos, ptrdiff_t *best);

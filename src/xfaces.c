@@ -5883,7 +5883,7 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
   struct frame *f = XFRAME (w->frame);
   Lisp_Object attrs[LFACE_VECTOR_SIZE];
   Lisp_Object prop, position;
-  ptrdiff_t i, noverlays;
+  ptrdiff_t i, noverlays, overlay_vec_size = 40;
   Lisp_Object *overlay_vec;
   ptrdiff_t endpos;
   Lisp_Object propname = mouse ? Qmouse_face : Qface;
@@ -5907,13 +5907,27 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
     endpos = XINT (end);
 
   /* Look at properties from overlays.  */
-  USE_SAFE_ALLOCA;
+  /* USE_SAFE_ALLOCA; */
   {
     ptrdiff_t next_overlay;
+    struct Lisp_Overlay *next;
 
+#ifdef OVERLAYS_REMOVE
     GET_OVERLAYS_AT (pos, overlay_vec, noverlays, &next_overlay, false);
-    if (next_overlay < endpos)
-      endpos = next_overlay;
+#endif
+
+    overlay_vec = xnmalloc (overlay_vec_size, sizeof (*overlay_vec));
+    noverlays = overlays_at(pos, false, &overlay_vec,
+                            &overlay_vec_size, NULL, NULL, false);
+
+    next = overlay_tree_next_start (current_buffer->overlays_root,
+                                    pos);
+    if (next != OVERLAY_SENTINEL)
+      {
+        next_overlay = next->char_start;
+        if (next_overlay < endpos)
+          endpos = next_overlay;
+      }
   }
 
   *endptr = endpos;
@@ -5935,7 +5949,7 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
   if (noverlays == 0
       && NILP (prop))
     {
-      SAFE_FREE ();
+      /* SAFE_FREE (); */
       return default_face->id;
     }
 
@@ -5961,15 +5975,15 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
       oend = OVERLAY_END (overlay_vec[i]);
       oendpos = OVERLAY_POSITION (oend);
 #endif
-      oend = XOVERLAY (overlay_vec[i])->char_end;
+      oendpos = XOVERLAY (overlay_vec[i])->char_end;
       if (oendpos < endpos)
 	endpos = oendpos;
     }
 
   *endptr = endpos;
 
-  SAFE_FREE ();
-
+  /* SAFE_FREE (); */
+  xfree (overlay_vec);
   /* Look up a realized face with the given face attributes,
      or realize a new one for ASCII characters.  */
   return lookup_face (f, attrs);

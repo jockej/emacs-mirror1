@@ -3595,7 +3595,6 @@ next_overlay_change (ptrdiff_t pos)
   /* printf("pos: %ld, next_change: %ld, ZV: %ld\n", pos, pos + next_chg, ZV); */
   return pos + next_chg;
 /* #endif */
-  /* return ZV; */
 }
 
 /* How many characters forward to search for a display property or
@@ -30334,7 +30333,14 @@ note_mouse_highlight (struct frame *f, int x, int y)
       if (BUFFERP (object))
 	{
 	  /* Put all the overlays we want in a vector in overlay_vec.  */
-	  GET_OVERLAYS_AT (pos, overlay_vec, noverlays, NULL, false);
+	  /* GET_OVERLAYS_AT (pos, overlay_vec, noverlays, NULL, false); */
+          ptrdiff_t overlay_vec_size = 40;
+          overlay_vec = xnmalloc (overlay_vec_size,
+                                  sizeof (*overlay_vec));
+          noverlays = overlays_at(pos, false, &overlay_vec,
+                                  &overlay_vec_size, NULL, NULL, false);
+
+
 	  /* Sort overlays into increasing priority order.  */
 	  noverlays = sort_overlays (overlay_vec, noverlays, w);
 	}
@@ -30612,6 +30618,7 @@ note_mouse_highlight (struct frame *f, int x, int y)
       BEGV = obegv;
       ZV = ozv;
       current_buffer = obuf;
+      xfree (overlay_vec);
       SAFE_FREE ();
     }
 
