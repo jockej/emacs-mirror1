@@ -93,35 +93,8 @@ overlay_lt (struct Lisp_Overlay *a, struct Lisp_Overlay *b)
     return a < b;
 }
 
-/* Assert that OV has a parent of an admissable type.  */
-/* #define EASSERT_PARENT_TYPE(ov)                  \ */
-/*   if ((ov) != OVERLAY_SENTINEL)                  \ */
-/*     do {                                         \ */
-/*       eassert(OVERLAYP ((ov)->parent) ||         \ */
-/*               BUFFERP ((ov)->parent)  ||         \ */
-/*               NILP ((ov)->parent));              \ */
-/*   } while (false) */
 
 #ifdef CHECK_OVERLAY_TREE
-/* void */
-/* check_parents (struct Lisp_Overlay *root, Lisp_Object parent) */
-/* { */
-/*   if (root == OVERLAY_SENTINEL) */
-/*     return; */
-
-/*   /\* These are there to print with `pp' in gdb *\/ */
-/*   Lisp_Object me, left, right; */
-/*   XSETMISC (me, root); */
-/*   XSETMISC (left, root->left); */
-/*   XSETMISC (right, root->right); */
-
-/*   /\* Check we have the correct parent *\/ */
-/*   eassert ( EQ (root->parent, parent)); */
-
-/*   check_parents(root->left, me); */
-/*   check_parents(root->right, me); */
-/* } */
-
 void
 check_valid_aa_tree (struct Lisp_Overlay *root)
 {
@@ -144,18 +117,15 @@ check_valid_aa_tree (struct Lisp_Overlay *root)
 
   /* Check the max field */
   eassert (root->max >= root->left->max &&
-           root->max >= root->left->max &&
+           root->max >= root->right->max &&
            root->max >= root->char_end);
   /* Check subtrees */
   check_valid_aa_tree (root->left);
   check_valid_aa_tree (root->right);
 }
-
 #endif
 
-/* Rebalancing.  See Andersson's paper for a good explaination.  This
-   is a bit more complicated than his code, since we need to maintain
-   parent pointer and max field.  */
+/* Rebalancing.  See Andersson's paper for a good explaination .  */
 inline static void
 overlay_skew (struct Lisp_Overlay **tt)
 {
@@ -185,7 +155,6 @@ inline static void
 overlay_split (struct Lisp_Overlay **tt)
 {
   struct Lisp_Overlay *t = *tt;
-  /* eassert (OVERLAYP (t->parent) || BUFFERP (t->parent)); */
   if (t != OVERLAY_SENTINEL && t->level == t->right->right->level )
     {
       /* printf("splitting around %p\n", t); */
@@ -201,9 +170,24 @@ overlay_split (struct Lisp_Overlay **tt)
     }
 }
 
-/* Insert NODE in TREE.  When it is inserted, set its parent to
-   PARENT.  On the way up after the insertion, adjust the max field of
-   each node if needed.  */
+void
+print_tree(struct Lisp_Overlay *tree, unsigned level)
+{
+
+  for (unsigned i = 0; i < level; i++)
+    printf("  ");
+  if (tree == OVERLAY_SENTINEL)
+    {
+      printf("nil\n");
+      return;
+    }
+  printf("%li to %li\n", tree->char_start, tree->char_end);
+  print_tree(tree->right, level + 2);
+  print_tree(tree->left, level + 2);
+}
+
+/* Insert NODE in TREE.  On the way up after the insertion, adjust the
+   max field of each node if needed.  */
 static ptrdiff_t
 overlay_tree_insert_internal (struct Lisp_Overlay **tree,
                               struct Lisp_Overlay *node)
@@ -292,9 +276,9 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
       deleted != OVERLAY_SENTINEL &&
       node == deleted)
     {
-      /* printf("Deleted overlay from %ld to %ld at addr: %p with level %u and parent %p\n", */
-             /* deleted->char_start, deleted->char_end, deleted, */
-             /* deleted->level, deleteds_parent); */
+      printf("Deleted overlay from %ld to %ld at addr: %p with level %u and parent %p\n",
+             deleted->char_start, deleted->char_end, deleted,
+             deleted->level, deleteds_parent);
       /* if (last == deleted) printf("It was a leaf\n"); */
 
       if (last != deleted)
@@ -440,11 +424,6 @@ overlay_tree_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
                  ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
                  ptrdiff_t *idx)
 {
-  if (tree != OVERLAY_SENTINEL)
-    {
-      /* printf("overlay_tree_at: %p, left: %p, right: %p, depth: %d\n", */
-             /* tree, tree->left, tree->right, max_depth); */
-    }
   CHECK_TREE (tree);
   if (tree == OVERLAY_SENTINEL || tree->max < pos)
     return;
@@ -543,6 +522,23 @@ overlay_tree_next_change (struct Lisp_Overlay *tree,
   overlay_tree_next_change (tree->left, pos, best);
 }
 
+struct Lisp_Overlay *
+overlay_tree_next_start (struct Lisp_Overlay *tree, ptrdiff_t pos)
+{
+  if (tree == OVERLAY_SENTINEL)
+    return tree;
+
+  if (tree->char_start <= pos)
+    {
+      if (tree->right->char_start > pos)
+        return tree->right;
+      else
+        return overlay_tree_next_start (tree->right, pos);
+    }
+  else
+    return overlay_tree_next_start (tree->left, pos);
+}
+
 void
 overlay_tree_prev_change (struct Lisp_Overlay *tree,
                           ptrdiff_t pos, ptrdiff_t *best)
@@ -591,7 +587,7 @@ overlay_tree_all_internal (struct Lisp_Overlay *tree,
 
   overlay_tree_all_internal (tree->left, vec_size,
                              vec_ptr, idx);
-  /* add_to_vec (vec_size, vec_ptr, idx, tree); */
+  add_to_vec (tree, vec_ptr, vec_size, idx);
   overlay_tree_all_internal (tree->right, vec_size,
                              vec_ptr, idx);
 }
@@ -623,6 +619,7 @@ reinsert_negative_size_overlays (struct Lisp_Overlay **root,
   for (ptrdiff_t i = 0; i < n; i++)
     {
       o = XOVERLAY (vecp[i]);
+      eassert (o->char_end < o->char_start);
       o->char_end = o->char_start;
       CHECK_TREE (*root);
       overlay_tree_delete(root, o, NULL);
@@ -880,20 +877,19 @@ DEFUN("overlays-in-buffer", Foverlays_in_buffer, Soverlays_in_buffer,
   else
     b = current_buffer;
 
-
   ptrdiff_t vec_size = 30;
   Lisp_Object *vec = xnmalloc (vec_size, sizeof (Lisp_Object));
-
 
   ptrdiff_t noverlays = overlay_tree_all(b->overlays_root,
                                          &vec_size, &vec);
   ret = Flist(noverlays, vec);
 
+  xfree (vec);
   return ret;
 }
 
 DEFUN("overlay-subtree", Foverlay_subtree, Soverlay_subtree, 1, 1, 0,
-      doc: /* Return the subtree rooted at overlay as a list.  Will
+      doc: /* Return the subtree rooted at OVERLAY as a list.  Will
               not work for for the sentinel.  */)
   (Lisp_Object overlay)
 {
@@ -916,7 +912,6 @@ DEFUN("overlay-subtree", Foverlay_subtree, Soverlay_subtree, 1, 1, 0,
       XSETMISC (right, me->right);
       righttree = Fcons (Foverlay_subtree (right), Qnil);
     }
-
 
   ret = Fcons (overlay,
                Fcons (lefttree,

@@ -1124,7 +1124,7 @@ record_unwind_current_buffer (void)
 /* Get overlays at POSN into array OVERLAYS with NOVERLAYS elements.
    If NEXTP is non-NULL, return next overlay there.
    See overlay_at arg CHANGE_REQ for meaning of CHRQ arg.  */
-
+#ifdef OVERLAYS_REMOVE
 #define GET_OVERLAYS_AT(posn, overlays, noverlays, nextp, chrq)		\
   do {									\
     ptrdiff_t maxlen = 40;						\
@@ -1139,6 +1139,7 @@ record_unwind_current_buffer (void)
 				   nextp, NULL, chrq);			\
       }									\
   } while (false)
+#endif
 
 extern Lisp_Object Vbuffer_alist;
 
