@@ -595,7 +595,7 @@ even if it is dead.  The return value is never nil.  */)
 
 /* Return a list of overlays which is a copy of the overlay list
    LIST, but for buffer B.  */
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_REMOVE // I guess... it's never used
 static struct Lisp_Overlay *
 copy_overlays (struct buffer *b, struct Lisp_Overlay *list)
 {

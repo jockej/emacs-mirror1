@@ -3565,7 +3565,7 @@ compute_stop_pos (struct it *it)
 static ptrdiff_t
 next_overlay_change (ptrdiff_t pos)
 {
-#ifdef OVERLAYS_FIX
+#ifdef OVERLAYS_FIXED
   ptrdiff_t i, noverlays;
   ptrdiff_t endpos;
   Lisp_Object *overlays;
