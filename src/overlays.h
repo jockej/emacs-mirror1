@@ -59,6 +59,14 @@ struct Lisp_Overlay *
 overlay_tree_next_start (struct Lisp_Overlay *tree, ptrdiff_t pos);
 
 void
+print_tree(struct Lisp_Overlay *tree, unsigned level);
+#define PRINT_TREE(TREE)                        \
+  do {                                          \
+    print_tree(TREE, 0);                        \
+    printf("\n");                               \
+  } while (0)
+
+void
 overlay_tree_prev_change(struct Lisp_Overlay *tree,
                          ptrdiff_t pos, ptrdiff_t *best);
 

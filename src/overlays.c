@@ -276,9 +276,9 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
       deleted != OVERLAY_SENTINEL &&
       node == deleted)
     {
-      printf("Deleted overlay from %ld to %ld at addr: %p with level %u and parent %p\n",
-             deleted->char_start, deleted->char_end, deleted,
-             deleted->level, deleteds_parent);
+      /* printf("Deleted overlay from %ld to %ld at addr: %p with level %u and parent %p\n", */
+             /* deleted->char_start, deleted->char_end, deleted, */
+             /* deleted->level, deleteds_parent); */
       /* if (last == deleted) printf("It was a leaf\n"); */
 
       if (last != deleted)
@@ -290,7 +290,7 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
           last->left = deleted->left;
 
           if (deleted->right == last)
-            last->right = OVERLAY_SENTINEL;
+            ;            /* last->right = OVERLAY_SENTINEL; */
           else
             {
               eassert (last->right->level <= last->level);
@@ -312,7 +312,8 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
     }
   else
     {
-      /* printf("going up: tree=%p, *tree=%p\n", tree, *tree); */
+      /* printf("going up: %li to %li\n", t->char_start, t->char_end); */
+      /* PRINT_TREE(current_buffer->overlays_root); */
       if (t == lasts_parent)
         {
           if (t->left == last)
@@ -351,6 +352,8 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
           t = *tree = last;
         }
 
+      /* printf("going up: before lowering: %li to %li\n", t->char_start, t->char_end); */
+      /* PRINT_TREE(current_buffer->overlays_root); */
       /* printf("Going up, at %p which has level %u\n", t, t->level); */
       /* Adjust all max fields along the path up.  */
       t->max = overlay_find_max(t);
@@ -373,21 +376,33 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
                  /* c->right->level, c->right->right->level); */
           /* eassert (c->level >= c->right->level && */
                    /* c->level >= c->left->level); */
+          /* printf("before first skew:\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
           overlay_skew (tree);
+          /* printf("after first skew:\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
 
           /* c = (*tree)->right; */
           /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */
                  /* c->right->level, c->right->right->level); */
           /* eassert (c->level >= c->right->level && */
                    /* c->level >= c->left->level); */
+          /* printf("before 2nd skew:\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
           overlay_skew (&(*tree)->right);
+          /* printf("after 2nd skew:\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
 
           /* c = (*tree)->right->right; */
           /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */
                  /* c->right->level, c->right->right->level); */
           /* eassert (c->level >= c->right->level && */
                    /* c->level >= c->left->level); */
+          /* printf("before 3rd skew:\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
           overlay_skew (&(*tree)->right->right);
+          /* printf("after 3rd skew:\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
 
           /* c = *tree; */
           /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */

@@ -3850,10 +3850,14 @@ DEFUN ("delete-overlay", Fdelete_overlay, Sdelete_overlay, 1, 1, 0,
   specbind (Qinhibit_quit, Qt);
 
   /* printf("Fdelete_overlay at %p\n", XOVERLAY (overlay)); */
+  /* printf("Before deleting:\n"); */
+  /* PRINT_TREE(b->overlays_root); */
   CHECK_TREE (b->overlays_root);
   /* printf("Fdelete_overlay, tree=%p, *tree=%p\n", &b->overlays_root, b->overlays_root); */
   overlay_tree_delete (&b->overlays_root, XOVERLAY (overlay), NULL);
   CHECK_TREE (b->overlays_root);
+  /* printf("After deleting:\n"); */
+  /* PRINT_TREE(b->overlays_root); */
 
   /* When deleting an overlay with before or after strings, turn off
      display optimizations for the affected buffer, on the basis that
