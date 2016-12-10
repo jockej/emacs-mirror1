@@ -306,15 +306,15 @@ This expression is a list of expressions that can involve the keywords
 `seconds', all numbers in string form, and `monthname', `dayname', `am-pm',
 and `time-zone' all alphabetic strings, and `mail' a true/nil value.
 
-For example, the form
+For example:
 
-  '((substring year -2) \"/\" month \"/\" day
+   ((substring year -2) \"/\" month \"/\" day
     \" \" 24-hours \":\" minutes \":\" seconds
     (if time-zone \" (\") time-zone (if time-zone \")\")
     (if mail \" Mail\" \"\"))
 
 would give mode line times like `94/12/30 21:07:48 (UTC)'."
-  :type 'sexp
+  :type '(repeat sexp)
   :group 'display-time)
 
 (defun display-time-event-handler ()

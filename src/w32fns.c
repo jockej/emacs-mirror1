@@ -7328,7 +7328,7 @@ value of DIR as in previous invocations; this is standard Windows behavior.  */)
   } new_file_details_w;
 
 #ifdef NTGUI_UNICODE
-  wchar_t filename_buf_w[32*1024 + 1]; // NT kernel maximum
+  wchar_t filename_buf_w[32*1024 + 1]; /* NT kernel maximum */
   OPENFILENAMEW * file_details_w = &new_file_details_w.details;
   const int use_unicode = 1;
 #else /* not NTGUI_UNICODE */
@@ -9757,6 +9757,7 @@ frame_parm_handler w32_frame_parm_handlers[] =
   x_set_alpha,
   0, /* x_set_sticky */
   0, /* x_set_tool_bar_position */
+  0, /* x_set_inhibit_double_buffering */
 };
 
 void

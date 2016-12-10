@@ -514,7 +514,8 @@ argument VECP, this copies vectors as well as conses."
 		(setq newcar (copy-tree (car tree) vecp)))
 	    (push newcar result))
 	  (setq tree (cdr tree)))
-	(nconc (nreverse result) tree))
+	(nconc (nreverse result)
+               (if (and vecp (vectorp tree)) (copy-tree tree vecp) tree)))
     (if (and vecp (vectorp tree))
 	(let ((i (length (setq tree (copy-sequence tree)))))
 	  (while (>= (setq i (1- i)) 0)
@@ -910,7 +911,7 @@ KEY is a string or vector representing a sequence of keystrokes."
 
 (defun substitute-key-definition (olddef newdef keymap &optional oldmap prefix)
   "Replace OLDDEF with NEWDEF for any keys in KEYMAP now defined as OLDDEF.
-In other words, OLDDEF is replaced with NEWDEF where ever it appears.
+In other words, OLDDEF is replaced with NEWDEF wherever it appears.
 Alternatively, if optional fourth argument OLDMAP is specified, we redefine
 in KEYMAP as NEWDEF those keys which are defined as OLDDEF in OLDMAP.
 
@@ -1290,33 +1291,14 @@ be a list of the form returned by `event-start' and `event-end'."
 
 ;;;; Obsolescent names for functions.
 
-(define-obsolete-function-alias 'window-dot 'window-point "22.1")
-(define-obsolete-function-alias 'set-window-dot 'set-window-point "22.1")
-(define-obsolete-function-alias 'read-input 'read-string "22.1")
-(define-obsolete-function-alias 'show-buffer 'set-window-buffer "22.1")
-(define-obsolete-function-alias 'eval-current-buffer 'eval-buffer "22.1")
-(define-obsolete-function-alias 'string-to-int 'string-to-number "22.1")
-
 (make-obsolete 'forward-point "use (+ (point) N) instead." "23.1")
 (make-obsolete 'buffer-has-markers-at nil "24.3")
 
 ;; bug#23850
-(make-obsolete 'string-to-unibyte   "use `encode-coding-string'." "25.2")
-(make-obsolete 'string-as-unibyte   "use `encode-coding-string'." "25.2")
-(make-obsolete 'string-to-multibyte "use `decode-coding-string'." "25.2")
-(make-obsolete 'string-as-multibyte "use `decode-coding-string'." "25.2")
-
-(defun insert-string (&rest args)
-  "Mocklisp-compatibility insert function.
-Like the function `insert' except that any argument that is a number
-is converted into a string by expressing it in decimal."
-  (declare (obsolete insert "22.1"))
-  (dolist (el args)
-    (insert (if (integerp el) (number-to-string el) el))))
-
-(defun makehash (&optional test)
-  (declare (obsolete make-hash-table "22.1"))
-  (make-hash-table :test (or test 'eql)))
+(make-obsolete 'string-to-unibyte   "use `encode-coding-string'." "26.1")
+(make-obsolete 'string-as-unibyte   "use `encode-coding-string'." "26.1")
+(make-obsolete 'string-to-multibyte "use `decode-coding-string'." "26.1")
+(make-obsolete 'string-as-multibyte "use `decode-coding-string'." "26.1")
 
 (defun log10 (x)
   "Return (log X 10), the log base 10 of X."
@@ -1338,45 +1320,6 @@ is converted into a string by expressing it in decimal."
 
 ;;;; Obsolescence declarations for variables, and aliases.
 
-;; Special "default-FOO" variables which contain the default value of
-;; the "FOO" variable are nasty.  Their implementation is brittle, and
-;; slows down several unrelated variable operations; furthermore, they
-;; can lead to really odd behavior if you decide to make them
-;; buffer-local.
-
-;; Not used at all in Emacs, last time I checked:
-(make-obsolete-variable 'default-mode-line-format
-                        "use (setq-default mode-line-format) or (default-value mode-line-format) instead"
-                        "23.2")
-(make-obsolete-variable 'default-header-line-format 'header-line-format "23.2")
-(make-obsolete-variable 'default-line-spacing 'line-spacing "23.2")
-(make-obsolete-variable 'default-abbrev-mode 'abbrev-mode "23.2")
-(make-obsolete-variable 'default-ctl-arrow 'ctl-arrow "23.2")
-(make-obsolete-variable 'default-truncate-lines 'truncate-lines "23.2")
-(make-obsolete-variable 'default-left-margin 'left-margin "23.2")
-(make-obsolete-variable 'default-tab-width 'tab-width "23.2")
-(make-obsolete-variable 'default-case-fold-search 'case-fold-search "23.2")
-(make-obsolete-variable 'default-left-margin-width 'left-margin-width "23.2")
-(make-obsolete-variable 'default-right-margin-width 'right-margin-width "23.2")
-(make-obsolete-variable 'default-left-fringe-width 'left-fringe-width "23.2")
-(make-obsolete-variable 'default-right-fringe-width 'right-fringe-width "23.2")
-(make-obsolete-variable 'default-fringes-outside-margins 'fringes-outside-margins "23.2")
-(make-obsolete-variable 'default-scroll-bar-width 'scroll-bar-width "23.2")
-(make-obsolete-variable 'default-vertical-scroll-bar 'vertical-scroll-bar "23.2")
-(make-obsolete-variable 'default-indicate-empty-lines 'indicate-empty-lines "23.2")
-(make-obsolete-variable 'default-indicate-buffer-boundaries 'indicate-buffer-boundaries "23.2")
-(make-obsolete-variable 'default-fringe-indicator-alist 'fringe-indicator-alist "23.2")
-(make-obsolete-variable 'default-fringe-cursor-alist 'fringe-cursor-alist "23.2")
-(make-obsolete-variable 'default-scroll-up-aggressively 'scroll-up-aggressively "23.2")
-(make-obsolete-variable 'default-scroll-down-aggressively 'scroll-down-aggressively "23.2")
-(make-obsolete-variable 'default-fill-column 'fill-column "23.2")
-(make-obsolete-variable 'default-cursor-type 'cursor-type "23.2")
-(make-obsolete-variable 'default-cursor-in-non-selected-windows 'cursor-in-non-selected-windows "23.2")
-(make-obsolete-variable 'default-buffer-file-coding-system 'buffer-file-coding-system "23.2")
-(make-obsolete-variable 'default-major-mode 'major-mode "23.2")
-(make-obsolete-variable 'default-enable-multibyte-characters
-      "use enable-multibyte-characters or set-buffer-multibyte instead" "23.2")
-
 (make-obsolete-variable 'define-key-rebound-commands nil "23.2")
 (make-obsolete-variable 'redisplay-end-trigger-functions 'jit-lock-register "23.1")
 (make-obsolete-variable 'deferred-action-list 'post-command-hook "24.1")
@@ -1387,6 +1330,9 @@ is converted into a string by expressing it in decimal."
 
 (make-obsolete 'process-filter-multibyte-p nil "23.1")
 (make-obsolete 'set-process-filter-multibyte nil "23.1")
+
+(make-obsolete-variable 'command-debug-status
+                        "expect it to be removed in a future version." "25.2")
 
 ;; Lisp manual only updated in 22.1.
 (define-obsolete-variable-alias 'executing-macro 'executing-kbd-macro
@@ -1933,7 +1879,7 @@ definition, variable definition, or face definition only."
 	   (autoloadp (symbol-function symbol)))
       (nth 1 (symbol-function symbol))
     (let ((files load-history)
-	  file)
+	  file match)
       (while files
 	(if (if type
 		(if (eq type 'defvar)
@@ -1944,7 +1890,8 @@ definition, variable definition, or face definition only."
 	      ;; We accept all types, so look for variable def
 	      ;; and then for any other kind.
 	      (or (member symbol (cdr (car files)))
-		  (rassq symbol (cdr (car files)))))
+		  (and (setq match (rassq symbol (cdr (car files))))
+		       (not (eq 'require (car match))))))
 	    (setq file (car (car files)) files nil))
 	(setq files (cdr files)))
       file)))
@@ -1996,7 +1943,7 @@ this process is not associated with any buffer.
 
 PROGRAM is the program file name.  It is searched for in `exec-path'
 \(which see).  If nil, just associate a pty with the buffer.  Remaining
-arguments are strings to give program as arguments.
+arguments PROGRAM-ARGS are strings to give program as arguments.
 
 If you want to separate standard output from standard error, use
 `make-process' or invoke the command through a shell and redirect
@@ -2893,9 +2840,11 @@ remove properties specified by `yank-excluded-properties'."
 (defvar yank-undo-function)
 
 (defun insert-for-yank (string)
-  "Call `insert-for-yank-1' repetitively for each `yank-handler' segment.
+  "Insert STRING at point for the `yank' command.
 
-See `insert-for-yank-1' for more details."
+This function is like `insert', except it honors the variables
+`yank-handled-properties' and `yank-excluded-properties', and the
+`yank-handler' text property, in the way that `yank' does."
   (let (to)
     (while (setq to (next-single-property-change 0 'yank-handler string))
       (insert-for-yank-1 (substring string 0 to))
@@ -2903,31 +2852,7 @@ See `insert-for-yank-1' for more details."
   (insert-for-yank-1 string))
 
 (defun insert-for-yank-1 (string)
-  "Insert STRING at point for the `yank' command.
-This function is like `insert', except it honors the variables
-`yank-handled-properties' and `yank-excluded-properties', and the
-`yank-handler' text property.
-
-Properties listed in `yank-handled-properties' are processed,
-then those listed in `yank-excluded-properties' are discarded.
-
-If STRING has a non-nil `yank-handler' property on its first
-character, the normal insert behavior is altered.  The value of
-the `yank-handler' property must be a list of one to four
-elements, of the form (FUNCTION PARAM NOEXCLUDE UNDO).
-FUNCTION, if non-nil, should be a function of one argument, an
- object to insert; it is called instead of `insert'.
-PARAM, if present and non-nil, replaces STRING as the argument to
- FUNCTION or `insert'; e.g. if FUNCTION is `yank-rectangle', PARAM
- may be a list of strings to insert as a rectangle.
-If NOEXCLUDE is present and non-nil, the normal removal of
- `yank-excluded-properties' is not performed; instead FUNCTION is
- responsible for the removal.  This may be necessary if FUNCTION
- adjusts point before or after inserting the object.
-UNDO, if present and non-nil, should be a function to be called
- by `yank-pop' to undo the insertion of the current object.  It is
- given two arguments, the start and end of the region.  FUNCTION
- may set `yank-undo-function' to override UNDO."
+  "Helper for `insert-for-yank', which see."
   (let* ((handler (and (stringp string)
 		       (get-text-property 0 'yank-handler string)))
 	 (param (or (nth 1 handler) string))
@@ -3410,6 +3335,11 @@ is allowed once again.  (Immediately, if `inhibit-quit' is nil.)"
 	   ;; call, and that might allow it to exit thru a condition-case
 	   ;; that intends to handle the quit signal next time.
 	   (eval '(ignore nil)))))
+
+;; Don't throw `throw-on-input' on those events by default.
+(setq while-no-input-ignore-events
+      '(focus-in focus-out help-echo iconify-frame
+        make-frame-visible selection-request))
 
 (defmacro while-no-input (&rest body)
   "Execute BODY only as long as there's no pending input.
@@ -4581,8 +4511,10 @@ to deactivate this transient map, regardless of KEEP-PRED."
                         ;; exit C-u.
                         t)
                        ((eq t keep-pred)
-                        (eq this-command
-                            (lookup-key map (this-command-keys-vector))))
+                        (let ((mc (lookup-key map (this-command-keys-vector))))
+                          ;; If the key is unbound `this-command` is
+                          ;; nil and so is `mc`.
+                          (and mc (eq this-command mc))))
                        (t (funcall keep-pred)))
                 (funcall exitfun)))))
     (add-hook 'pre-command-hook clearfun)
@@ -5019,6 +4951,20 @@ as a list.")
             (if (string-match "\\([^.].*?\\)-\\([0-9]+\\(?:[.][0-9]+\\|\\(?:pre\\|beta\\|alpha\\)[0-9]+\\)*\\)" subdir)
                 (match-string 1 subdir) subdir))
           "-pkg.el"))
+
+
+;;; Thread support.
+
+(defmacro with-mutex (mutex &rest body)
+  "Invoke BODY with MUTEX held, releasing MUTEX when done.
+This is the simplest safe way to acquire and release a mutex."
+  (declare (indent 1) (debug t))
+  (let ((sym (make-symbol "mutex")))
+    `(let ((,sym ,mutex))
+       (mutex-lock ,sym)
+       (unwind-protect
+	   (progn ,@body)
+	 (mutex-unlock ,sym)))))
 
 
 ;;; Misc.

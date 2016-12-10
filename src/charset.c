@@ -30,6 +30,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <limits.h>
 #include <sys/types.h>
@@ -435,7 +436,7 @@ read_hex (FILE *fp, bool *eof, bool *overflow)
   n = 0;
   while (c_isxdigit (c = getc (fp)))
     {
-      if (UINT_MAX >> 4 < n)
+      if (INT_LEFT_SHIFT_OVERFLOW (n, 4))
 	*overflow = 1;
       n = ((n << 4)
 	   | (c - ('0' <= c && c <= '9' ? '0'

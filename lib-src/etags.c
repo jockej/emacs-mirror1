@@ -90,10 +90,6 @@ char pot_etags_version[] = "@(#) pot revision number is 17.38.1.4";
 
 #include <config.h>
 
-#ifndef _GNU_SOURCE
-# define _GNU_SOURCE 1		/* enables some compiler checks on GNU */
-#endif
-
 /* WIN32_NATIVE is for XEmacs.
    MSDOS, WINDOWSNT, DOS_NT are for Emacs. */
 #ifdef WIN32_NATIVE
@@ -1334,7 +1330,7 @@ main (int argc, char **argv)
 	    pfatal (tagfile);
 	}
 
-      exit (EXIT_SUCCESS);
+      return EXIT_SUCCESS;
     }
 
   /* From here on, we are in (CTAGS && !cxref_style) */
@@ -1387,7 +1383,7 @@ main (int argc, char **argv)
 	z = stpcpy (z, tagfile);
 	*z++ = ' ';
 	strcpy (z, tagfile);
-	exit (system (cmd));
+	return system (cmd);
       }
   return EXIT_SUCCESS;
 }
@@ -2271,7 +2267,7 @@ invalidate_nodes (fdesc *badfdp, node **npp)
 	      free_tree (np);		  /* free it */
 
 	      /* Continue with rest of tree.  */
-	      np = np_parent ? np_parent->left : NULL;
+	      np = np_parent->left;
 	    }
 	}
       *npp = super_root.left;
@@ -3595,13 +3591,27 @@ C_entries (int c_ext, FILE *inf)
 			      int off = tokoff;
 			      int len = toklen;
 
-			      /* Rewrite the tag so that emacs lisp DEFUNs
-				 can be found by their elisp name */
 			      if (defun)
 				{
 				  off += 1;
 				  len -= 1;
+
+				  /* First, tag it as its C name */
+				  linebuffer_setlen (&token_name, toklen);
+				  memcpy (token_name.buffer,
+					  newlb.buffer + tokoff, toklen);
+				  token_name.buffer[toklen] = '\0';
+				  token.named = true;
+				  token.lineno = lineno;
+				  token.offset = tokoff;
+				  token.length = toklen;
+				  token.line = newlb.buffer;
+				  token.linepos = newlinepos;
+				  token.valid = true;
+				  make_C_tag (funorvar);
 				}
+			      /* Rewrite the tag so that emacs lisp DEFUNs
+				 can be found also by their elisp name */
 			      linebuffer_setlen (&token_name, len);
 			      memcpy (token_name.buffer,
 				      newlb.buffer + off, len);
@@ -5459,16 +5469,37 @@ Forth_words (FILE *inf)
 	do			/* skip to ) or eol */
 	  bp++;
 	while (*bp != ')' && *bp != '\0');
-      else if ((bp[0] == ':' && c_isspace (bp[1]) && bp++)
-	       || LOOKING_AT_NOCASE (bp, "constant")
-	       || LOOKING_AT_NOCASE (bp, "code")
-	       || LOOKING_AT_NOCASE (bp, "create")
-	       || LOOKING_AT_NOCASE (bp, "defer")
-	       || LOOKING_AT_NOCASE (bp, "value")
-	       || LOOKING_AT_NOCASE (bp, "variable")
-	       || LOOKING_AT_NOCASE (bp, "buffer:")
-	       || LOOKING_AT_NOCASE (bp, "field"))
-	get_tag (skip_spaces (bp), NULL); /* Yay!  A definition! */
+      else if (((bp[0] == ':' && c_isspace (bp[1]) && bp++)
+		|| LOOKING_AT_NOCASE (bp, "constant")
+		|| LOOKING_AT_NOCASE (bp, "2constant")
+		|| LOOKING_AT_NOCASE (bp, "fconstant")
+		|| LOOKING_AT_NOCASE (bp, "code")
+		|| LOOKING_AT_NOCASE (bp, "create")
+		|| LOOKING_AT_NOCASE (bp, "defer")
+		|| LOOKING_AT_NOCASE (bp, "value")
+		|| LOOKING_AT_NOCASE (bp, "2value")
+		|| LOOKING_AT_NOCASE (bp, "fvalue")
+		|| LOOKING_AT_NOCASE (bp, "variable")
+		|| LOOKING_AT_NOCASE (bp, "2variable")
+		|| LOOKING_AT_NOCASE (bp, "fvariable")
+		|| LOOKING_AT_NOCASE (bp, "buffer:")
+		|| LOOKING_AT_NOCASE (bp, "field:")
+		|| LOOKING_AT_NOCASE (bp, "+field")
+		|| LOOKING_AT_NOCASE (bp, "field") /* not standard? */
+		|| LOOKING_AT_NOCASE (bp, "begin-structure")
+		|| LOOKING_AT_NOCASE (bp, "synonym")
+		)
+	       && c_isspace (bp[0]))
+	{
+	  /* Yay!  A definition! */
+	  char* name_start = skip_spaces (bp);
+	  char* name_end = skip_non_spaces (name_start);
+	  if (name_start < name_end)
+	    make_tag (name_start, name_end - name_start,
+		      true, lb.buffer, name_end - lb.buffer,
+		      lineno, linecharno);
+	  bp = name_end;
+	}
       else
 	bp = skip_non_spaces (bp);
 }

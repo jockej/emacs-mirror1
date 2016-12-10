@@ -200,6 +200,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    used to fill in unspecified attributes of the default face.  */
 
 #include <config.h>
+#include <stdlib.h>
 #include "sysstdio.h"
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -494,7 +495,7 @@ x_create_gc (struct frame *f, unsigned long mask, XGCValues *xgcv)
 {
   GC gc;
   block_input ();
-  gc = XCreateGC (FRAME_X_DISPLAY (f), FRAME_X_WINDOW (f), mask, xgcv);
+  gc = XCreateGC (FRAME_X_DISPLAY (f), FRAME_X_DRAWABLE (f), mask, xgcv);
   unblock_input ();
   IF_DEBUG (++ngcs);
   return gc;

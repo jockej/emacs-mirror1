@@ -1,4 +1,4 @@
-;;; files.el --- tests for file handling.
+;;; files-tests.el --- tests for files.el.
 
 ;; Copyright (C) 2012-2016 Free Software Foundation, Inc.
 
@@ -197,4 +197,28 @@ form.")
       (setenv "FOO" foo-env)
       (setenv "BAR" bar-env))))
 
-;;; files.el ends here
+(ert-deftest files-test--save-buffers-kill-emacs--confirm-kill-processes ()
+  "Test that `save-buffers-kill-emacs' honors
+`confirm-kill-processes'."
+  (cl-letf* ((yes-or-no-p-prompts nil)
+             ((symbol-function #'yes-or-no-p)
+              (lambda (prompt)
+                (push prompt yes-or-no-p-prompts)
+                nil))
+             (kill-emacs-args nil)
+             ((symbol-function #'kill-emacs)
+              (lambda (&optional arg) (push arg kill-emacs-args)))
+             (process
+              (make-process
+               :name "sleep"
+               :command (list
+                         (expand-file-name invocation-name invocation-directory)
+                         "-batch" "-Q" "-eval" "(sleep-for 1000)")))
+             (confirm-kill-processes nil))
+    (save-buffers-kill-emacs)
+    (kill-process process)
+    (should-not yes-or-no-p-prompts)
+    (should (equal kill-emacs-args '(nil)))))
+
+(provide 'files-tests)
+;;; files-tests.el ends here

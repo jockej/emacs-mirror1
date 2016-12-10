@@ -4725,7 +4725,7 @@ editing and the result is evaluated.
 \(fn &optional PATTERN)" t nil)
 
 (autoload 'list-command-history "chistory" "\
-List history of commands typed to minibuffer.
+List history of commands that used the minibuffer.
 The number of commands listed is controlled by `list-command-history-max'.
 Calls value of `list-command-history-filter' (if non-nil) on each history
 element to judge if that element should be excluded from the list.
@@ -6383,7 +6383,10 @@ Expands to the most recent, preceding word for which this is a prefix.
 If no suitable preceding word is found, words following point are
 considered.  If still no suitable word is found, then look in the
 buffers accepted by the function pointed out by variable
-`dabbrev-friend-buffer-function'.
+`dabbrev-friend-buffer-function', if `dabbrev-check-other-buffers'
+says so.  Then, if `dabbrev-check-all-buffers' is non-nil, look in
+all the other buffers, subject to constraints specified
+by `dabbrev-ignored-buffer-names' and `dabbrev-ignored-regexps'.
 
 A positive prefix argument, N, says to take the Nth backward *distinct*
 possibility.  A negative argument says search forward.
@@ -6853,7 +6856,7 @@ For further details, see info node `(emacs)Saving Emacs Sessions'.
 
 \(fn &optional ARG)" t nil)
 
-(defvar desktop-locals-to-save '(desktop-locals-to-save truncate-lines case-fold-search case-replace fill-column overwrite-mode change-log-default-name line-number-mode column-number-mode size-indication-mode buffer-file-coding-system indent-tabs-mode tab-width indicate-buffer-boundaries indicate-empty-lines show-trailing-whitespace) "\
+(defvar desktop-locals-to-save '(desktop-locals-to-save truncate-lines case-fold-search case-replace fill-column overwrite-mode change-log-default-name line-number-mode column-number-mode size-indication-mode buffer-file-coding-system buffer-display-time indent-tabs-mode tab-width indicate-buffer-boundaries indicate-empty-lines show-trailing-whitespace) "\
 List of local variables to save for each buffer.
 The variables are saved only when they really are local.  Conventional minor
 modes are restored automatically; they should not be listed here.")
@@ -8520,6 +8523,7 @@ Run hooks in `electric-buffer-menu-mode-hook' on entry.
 \\[Buffer-menu-save] -- mark that buffer to be saved.
 \\[Buffer-menu-delete] or \\[Buffer-menu-delete-backwards] -- mark that buffer to be deleted.
 \\[Buffer-menu-unmark] -- remove all kinds of marks from current line.
+\\[Buffer-menu-unmark-all] -- remove all kinds of marks from all lines.
 \\[Electric-buffer-menu-mode-view-buffer] -- view buffer, returning when done.
 \\[Buffer-menu-backup-unmark] -- back up a line and remove marks.
 
@@ -11323,8 +11327,6 @@ Third arg DELIMITED (prefix arg) means replace only word-delimited matches.
 If you exit (\\[keyboard-quit], RET or q), you can resume the query replace
 with the command \\[tags-loop-continue].
 Fourth arg FILE-LIST-FORM non-nil means initialize the replacement loop.
-Fifth and sixth arguments START and END are accepted, for compatibility
-with `query-replace-regexp', and ignored.
 
 If FILE-LIST-FORM is non-nil, it is a form to evaluate to
 produce the list of files to search.
@@ -12358,7 +12360,54 @@ Copy directory-local variables to the -*- line.
 
 \(fn)" t nil)
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "files-x" '("modify-" "read-file-local-variable")))
+(defvar enable-connection-local-variables t "\
+Non-nil means enable use of connection-local variables.")
+
+(autoload 'connection-local-set-classes "files-x" "\
+Add CLASSES for remote servers.
+CRITERIA is either a regular expression identifying a remote
+server, or a function with one argument IDENTIFICATION, which
+returns non-nil when a remote server shall apply CLASS'es
+variables.  If CRITERIA is nil, it always applies.
+CLASSES are the names of a variable class (a symbol).
+
+When a connection to a remote server is opened and CRITERIA
+matches to that server, the connection-local variables from CLASSES
+are applied to the corresponding process buffer.  The variables
+for a class are defined using `connection-local-set-class-variables'.
+
+\(fn CRITERIA &rest CLASSES)" nil nil)
+
+(autoload 'connection-local-set-class-variables "files-x" "\
+Map the symbol CLASS to a list of variable settings.
+VARIABLES is a list that declares connection-local variables for
+the class.  An element in VARIABLES is an alist whose elements
+are of the form (VAR . VALUE).
+
+When a connection to a remote server is opened, the server's
+classes are found.  A server may be assigned a class using
+`connection-local-set-class'.  Then variables are set in the
+server's process buffer according to the VARIABLES list of the
+class.  The list is processed in order.
+
+\(fn CLASS VARIABLES)" nil nil)
+
+(autoload 'hack-connection-local-variables-apply "files-x" "\
+Apply connection-local variables identified by `default-directory'.
+Other local variables, like file-local and dir-local variables,
+will not be changed.
+
+\(fn)" nil nil)
+
+(autoload 'with-connection-local-classes "files-x" "\
+Apply connection-local variables according to CLASSES in current buffer.
+Execute BODY, and unwind connection local variables.
+
+\(fn CLASSES &rest BODY)" nil t)
+
+(function-put 'with-connection-local-classes 'lisp-indent-function '1)
+
+(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "files-x" '("hack-connection-local-variables" "connection-local-" "modify-" "read-file-local-variable")))
 
 ;;;***
 
@@ -15153,7 +15202,7 @@ The return value is the last VAL in the list.
 Return a reference to PLACE.
 This is like the `&' operator of the C language.
 Note: this only works reliably with lexical binding mode, except for very
-simple PLACEs such as (function-symbol \\='foo) which will also work in dynamic
+simple PLACEs such as (symbol-function \\='foo) which will also work in dynamic
 binding mode.
 
 \(fn PLACE)" nil t)
@@ -15396,6 +15445,7 @@ different regions.  With numeric argument ARG, behaves like
 
 (autoload 'describe-function "help-fns" "\
 Display the full documentation of FUNCTION (a symbol).
+When called from lisp, FUNCTION may also be a function object.
 
 \(fn FUNCTION)" t nil)
 
@@ -20866,6 +20916,49 @@ is modified to remove the default indication.
 ;;;### (autoloads nil "misc" "misc.el" (0 0 0 0))
 ;;; Generated autoloads from misc.el
 
+(autoload 'copy-from-above-command "misc" "\
+Copy characters from previous nonblank line, starting just above point.
+Copy ARG characters, but not past the end of that line.
+If no argument given, copy the entire rest of the line.
+The characters copied are inserted in the buffer before point.
+
+\(fn &optional ARG)" t nil)
+
+(autoload 'zap-up-to-char "misc" "\
+Kill up to, but not including ARGth occurrence of CHAR.
+Case is ignored if `case-fold-search' is non-nil in the current buffer.
+Goes backward if ARG is negative; error if CHAR not found.
+Ignores CHAR at point.
+
+\(fn ARG CHAR)" t nil)
+
+(autoload 'mark-beginning-of-buffer "misc" "\
+Set mark at the beginning of the buffer.
+
+\(fn)" t nil)
+
+(autoload 'mark-end-of-buffer "misc" "\
+Set mark at the end of the buffer.
+
+\(fn)" t nil)
+
+(autoload 'upcase-char "misc" "\
+Uppercasify ARG chars starting from point.  Point doesn't move.
+
+\(fn ARG)" t nil)
+
+(autoload 'forward-to-word "misc" "\
+Move forward until encountering the beginning of a word.
+With argument, do this that many times.
+
+\(fn ARG)" t nil)
+
+(autoload 'backward-to-word "misc" "\
+Move backward until encountering the end of a word.
+With argument, do this that many times.
+
+\(fn ARG)" t nil)
+
 (autoload 'butterfly "misc" "\
 Use butterflies to flip the desired bit on the drive platter.
 Open hands and let the delicate wings flap once.  The disturbance
@@ -20889,7 +20982,7 @@ The return value is always nil.
 
 \(fn &optional LOADED-ONLY-P BUFFER)" t nil)
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "misc" '("list-dynamic-libraries--" "backward-to-word" "forward-to-word" "upcase-char" "mark-" "zap-up-to-char" "copy-from-above-command")))
+(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "misc" '("list-dynamic-libraries--")))
 
 ;;;***
 
@@ -22290,7 +22383,7 @@ closing requests for requests that are used in matched pairs.
 
 ;;;### (autoloads nil "ntlm" "net/ntlm.el" (0 0 0 0))
 ;;; Generated autoloads from net/ntlm.el
-(push (purecopy '(ntlm 2 0 0)) package--builtin-versions)
+(push (purecopy '(ntlm 2 1 0)) package--builtin-versions)
 
 (if (fboundp 'register-definition-prefixes) (register-definition-prefixes "ntlm" '("ntlm-")))
 
@@ -24245,9 +24338,9 @@ any kind of error.
 (function-put 'pcase-let 'lisp-indent-function '1)
 
 (autoload 'pcase-dolist "pcase" "\
+Like `dolist' but where the binding can be a `pcase' pattern.
 
-
-\(fn SPEC &rest BODY)" nil t)
+\(fn (PATTERN LIST) BODY...)" nil t)
 
 (function-put 'pcase-dolist 'lisp-indent-function '1)
 
@@ -26789,18 +26882,44 @@ This enforces rescanning the buffer on next use.
 
 (autoload 'regexp-opt "regexp-opt" "\
 Return a regexp to match a string in the list STRINGS.
-Each string should be unique in STRINGS and should not contain any regexps,
-quoted or not.  If optional PAREN is non-nil, ensure that the returned regexp
-is enclosed by at least one regexp grouping construct.
-The returned regexp is typically more efficient than the equivalent regexp:
+Each string should be unique in STRINGS and should not contain
+any regexps, quoted or not.  Optional PAREN specifies how the
+returned regexp is surrounded by grouping constructs.
 
- (let ((open (if PAREN \"\\\\(\" \"\")) (close (if PAREN \"\\\\)\" \"\")))
-   (concat open (mapconcat \\='regexp-quote STRINGS \"\\\\|\") close))
+The optional argument PAREN can be any of the following:
 
-If PAREN is `words', then the resulting regexp is additionally surrounded
-by \\=\\< and \\>.
-If PAREN is `symbols', then the resulting regexp is additionally surrounded
-by \\=\\_< and \\_>.
+a string
+    the resulting regexp is preceded by PAREN and followed by
+    \\), e.g.  use \"\\\\(?1:\" to produce an explicitly numbered
+    group.
+
+`words'
+    the resulting regexp is surrounded by \\=\\<\\( and \\)\\>.
+
+`symbols'
+    the resulting regexp is surrounded by \\_<\\( and \\)\\_>.
+
+non-nil
+    the resulting regexp is surrounded by \\( and \\).
+
+nil
+    the resulting regexp is surrounded by \\(?: and \\), if it is
+    necessary to ensure that a postfix operator appended to it will
+    apply to the whole expression.
+
+The resulting regexp is equivalent to but usually more efficient
+than that of a simplified version:
+
+ (defun simplified-regexp-opt (strings &optional paren)
+   (let ((parens
+          (cond ((stringp paren)       (cons paren \"\\\\)\"))
+                ((eq paren 'words)    '(\"\\\\\\=<\\\\(\" . \"\\\\)\\\\>\"))
+                ((eq paren 'symbols) '(\"\\\\_<\\\\(\" . \"\\\\)\\\\_>\"))
+                ((null paren)          '(\"\\\\(?:\" . \"\\\\)\"))
+                (t                       '(\"\\\\(\" . \"\\\\)\")))))
+     (concat (car paren)
+             (mapconcat 'regexp-quote strings \"\\\\|\")
+             (cdr paren))))
 
 \(fn STRINGS &optional PAREN)" nil nil)
 
@@ -27618,7 +27737,10 @@ Start using robin package NAME, which is a string.
 ;;; Generated autoloads from rot13.el
 
 (autoload 'rot13 "rot13" "\
-Return ROT13 encryption of OBJECT, a buffer or string.
+ROT13 encrypt OBJECT, a buffer or string.
+If OBJECT is a buffer, encrypt the region between START and END.
+If OBJECT is a string, encrypt it in its entirety, ignoring START
+and END, and return the encrypted string.
 
 \(fn OBJECT &optional START END)" nil nil)
 
@@ -29229,7 +29351,7 @@ Like `mail' command, but display mail buffer in another frame.
 
 ;;;### (autoloads nil "seq" "emacs-lisp/seq.el" (0 0 0 0))
 ;;; Generated autoloads from emacs-lisp/seq.el
-(push (purecopy '(seq 2 18)) package--builtin-versions)
+(push (purecopy '(seq 2 19)) package--builtin-versions)
 
 (if (fboundp 'register-definition-prefixes) (register-definition-prefixes "seq" '("seq-")))
 
@@ -32238,6 +32360,14 @@ use in that buffer.
 ;;;;;;  0 0))
 ;;; Generated autoloads from emacs-lisp/testcover.el
 
+(autoload 'testcover-start "testcover" "\
+Uses edebug to instrument all macros and functions in FILENAME, then
+changes the instrumentation from edebug to testcover--much faster, no
+problems with type-ahead or post-command-hook, etc.  If BYTE-COMPILE is
+non-nil, byte-compiles each function after instrumenting.
+
+\(fn FILENAME &optional BYTE-COMPILE)" t nil)
+
 (autoload 'testcover-this-defun "testcover" "\
 Start coverage on function under point.
 
@@ -33097,7 +33227,7 @@ TIME should be either a time value or a date-time string.
 
 \(fn TIME)" nil nil)
 
-(define-obsolete-function-alias 'subtract-time 'time-subtract "25.2")
+(define-obsolete-function-alias 'subtract-time 'time-subtract "26.1")
 
 (autoload 'date-to-day "time-date" "\
 Return the number of days between year 1 and DATE.
@@ -33659,21 +33789,11 @@ On W32 systems, the volume letter must be ignored.")
 Value for `tramp-file-name-regexp' for separate remoting.
 See `tramp-file-name-structure' for more explanations.")
 
-(defconst tramp-file-name-regexp (cond ((equal tramp-syntax 'ftp) tramp-file-name-regexp-unified) ((equal tramp-syntax 'sep) tramp-file-name-regexp-separate) (t (error "Wrong `tramp-syntax' defined"))) "\
+(defvar tramp-file-name-regexp (cond ((equal tramp-syntax 'ftp) tramp-file-name-regexp-unified) ((equal tramp-syntax 'sep) tramp-file-name-regexp-separate) (t (error "Wrong `tramp-syntax' defined"))) "\
 Regular expression matching file names handled by Tramp.
-This regexp should match Tramp file names but no other file names.
-When tramp.el is loaded, this regular expression is prepended to
-`file-name-handler-alist', and that is searched sequentially.  Thus,
-if the Tramp entry appears rather early in the `file-name-handler-alist'
-and is a bit too general, then some files might be considered Tramp
-files which are not really Tramp files.
-
-Please note that the entry in `file-name-handler-alist' is made when
-this file (tramp.el) is loaded.  This means that this variable must be set
-before loading tramp.el.  Alternatively, `file-name-handler-alist' can be
-updated after changing this variable.
-
-Also see `tramp-file-name-structure'.")
+This regexp should match Tramp file names but no other file
+names.  When calling `tramp-register-file-name-handlers', the
+initial value is overwritten by the car of `tramp-file-name-structure'.")
 
 (defconst tramp-completion-file-name-regexp-unified (if (memq system-type '(cygwin windows-nt)) "\\`/[^/]\\{2,\\}\\'" "\\`/[^/]*\\'") "\
 Value for `tramp-completion-file-name-regexp' for unified remoting.
@@ -33758,7 +33878,7 @@ Discard Tramp from loading remote files.
 ;;;;;;  0))
 ;;; Generated autoloads from net/tramp-compat.el
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "tramp-compat" '("tramp-compat-")))
+(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "tramp-compat" '("tramp-")))
 
 ;;;***
 
@@ -34990,6 +35110,11 @@ in any way you like.
 
 \(fn FILE OPPONENT)" nil nil)
 
+(autoload 'userlock--ask-user-about-supersession-threat "userlock" "\
+
+
+\(fn FN)" nil nil)
+
 (autoload 'ask-user-about-supersession-threat "userlock" "\
 Ask a user who is about to modify an obsolete buffer what to do.
 This function has two choices: it can return, in which case the modification
@@ -35001,7 +35126,7 @@ The buffer in question is current when this function is called.
 
 \(fn FN)" nil nil)
 
-(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "userlock" '("ask-user-about-" "file-")))
+(if (fboundp 'register-definition-prefixes) (register-definition-prefixes "userlock" '("ask-user-about-" "userlock--check-content-unchanged" "file-")))
 
 ;;;***
 
@@ -35098,6 +35223,10 @@ If FILE is already registered, return the
 backend of FILE.  If FILE is not registered, then the
 first backend in `vc-handled-backends' that declares itself
 responsible for FILE is returned.
+
+Note that if FILE is a symbolic link, it will not be resolved --
+the responsible backend system for the symbolic link itself will
+be reported.
 
 \(fn FILE)" nil nil)
 
@@ -36981,8 +37110,10 @@ in certain major modes.
 (autoload 'whitespace-mode "whitespace" "\
 Toggle whitespace visualization (Whitespace mode).
 With a prefix argument ARG, enable Whitespace mode if ARG is
-positive, and disable it otherwise.  If called from Lisp, enable
-the mode if ARG is omitted or nil.
+positive, and disable it otherwise.
+
+If called from Lisp, also enables the mode if ARG is omitted or nil,
+and toggles it if ARG is `toggle'.
 
 See also `whitespace-style', `whitespace-newline' and
 `whitespace-display-mappings'.
@@ -36992,8 +37123,10 @@ See also `whitespace-style', `whitespace-newline' and
 (autoload 'whitespace-newline-mode "whitespace" "\
 Toggle newline visualization (Whitespace Newline mode).
 With a prefix argument ARG, enable Whitespace Newline mode if ARG
-is positive, and disable it otherwise.  If called from Lisp,
-enable the mode if ARG is omitted or nil.
+is positive, and disable it otherwise.
+
+If called from Lisp, also enables the mode if ARG is omitted or nil,
+and toggles it if ARG is `toggle'.
 
 Use `whitespace-newline-mode' only for NEWLINE visualization
 exclusively.  For other visualizations, including NEWLINE
@@ -37017,8 +37150,10 @@ or call the function `global-whitespace-mode'.")
 (autoload 'global-whitespace-mode "whitespace" "\
 Toggle whitespace visualization globally (Global Whitespace mode).
 With a prefix argument ARG, enable Global Whitespace mode if ARG
-is positive, and disable it otherwise.  If called from Lisp,
-enable it if ARG is omitted or nil.
+is positive, and disable it otherwise.
+
+If called from Lisp, also enables the mode if ARG is omitted or nil,
+and toggles it if ARG is `toggle'.
 
 See also `whitespace-style', `whitespace-newline' and
 `whitespace-display-mappings'.
@@ -37038,8 +37173,10 @@ or call the function `global-whitespace-newline-mode'.")
 (autoload 'global-whitespace-newline-mode "whitespace" "\
 Toggle global newline visualization (Global Whitespace Newline mode).
 With a prefix argument ARG, enable Global Whitespace Newline mode
-if ARG is positive, and disable it otherwise.  If called from
-Lisp, enable it if ARG is omitted or nil.
+if ARG is positive, and disable it otherwise.
+
+If called from Lisp, also enables the mode if ARG is omitted or nil,
+and toggles it if ARG is `toggle'.
 
 Use `global-whitespace-newline-mode' only for NEWLINE
 visualization exclusively.  For other visualizations, including
@@ -37212,13 +37349,13 @@ The problems cleaned up are:
    If `whitespace-style' includes the value `empty', remove all
    empty lines at beginning and/or end of buffer.
 
-3. 8 or more SPACEs at beginning of line.
+3. `tab-width' or more SPACEs at beginning of line.
    If `whitespace-style' includes the value `indentation':
-   replace 8 or more SPACEs at beginning of line by TABs, if
-   `indent-tabs-mode' is non-nil; otherwise, replace TABs by
+   replace `tab-width' or more SPACEs at beginning of line by
+   TABs, if `indent-tabs-mode' is non-nil; otherwise, replace TABs by
    SPACEs.
    If `whitespace-style' includes the value `indentation::tab',
-   replace 8 or more SPACEs at beginning of line by TABs.
+   replace `tab-width' or more SPACEs at beginning of line by TABs.
    If `whitespace-style' includes the value `indentation::space',
    replace TABs by SPACEs.
 
@@ -37235,7 +37372,7 @@ The problems cleaned up are:
    If `whitespace-style' includes the value `trailing', remove
    all SPACEs or TABs at end of line.
 
-6. 8 or more SPACEs after TAB.
+6. `tab-width' or more SPACEs after TAB.
    If `whitespace-style' includes the value `space-after-tab':
    replace SPACEs by TABs, if `indent-tabs-mode' is non-nil;
    otherwise, replace TABs by SPACEs.
@@ -37254,13 +37391,13 @@ Cleanup some blank problems at region.
 
 The problems cleaned up are:
 
-1. 8 or more SPACEs at beginning of line.
+1. `tab-width' or more SPACEs at beginning of line.
    If `whitespace-style' includes the value `indentation':
-   replace 8 or more SPACEs at beginning of line by TABs, if
-   `indent-tabs-mode' is non-nil; otherwise, replace TABs by
+   replace `tab-width' or more SPACEs at beginning of line by TABs,
+   if `indent-tabs-mode' is non-nil; otherwise, replace TABs by
    SPACEs.
    If `whitespace-style' includes the value `indentation::tab',
-   replace 8 or more SPACEs at beginning of line by TABs.
+   replace `tab-width' or more SPACEs at beginning of line by TABs.
    If `whitespace-style' includes the value `indentation::space',
    replace TABs by SPACEs.
 
@@ -37277,7 +37414,7 @@ The problems cleaned up are:
    If `whitespace-style' includes the value `trailing', remove
    all SPACEs or TABs at end of line.
 
-4. 8 or more SPACEs after TAB.
+4. `tab-width' or more SPACEs after TAB.
    If `whitespace-style' includes the value `space-after-tab':
    replace SPACEs by TABs, if `indent-tabs-mode' is non-nil;
    otherwise, replace TABs by SPACEs.
@@ -37306,13 +37443,8 @@ non-nil.
 
 If FORCE is non-nil or \\[universal-argument] was pressed just
 before calling `whitespace-report-region' interactively, it
-forces `whitespace-style' to have:
-
-   empty
-   trailing
-   indentation
-   space-before-tab
-   space-after-tab
+forces all classes of whitespace problem to be considered
+significant.
 
 If REPORT-IF-BOGUS is t, it reports only when there are any
 whitespace problems in buffer; if it is `never', it does not
@@ -37324,9 +37456,9 @@ Report if some of the following whitespace problems exist:
    empty		1. empty lines at beginning of buffer.
    empty		2. empty lines at end of buffer.
    trailing		3. SPACEs or TABs at end of line.
-   indentation		4. 8 or more SPACEs at beginning of line.
+   indentation		4. line starts with `tab-width' or more SPACEs.
    space-before-tab	5. SPACEs before TAB.
-   space-after-tab	6. 8 or more SPACEs after TAB.
+   space-after-tab	6. `tab-width' or more SPACEs after TAB.
 
 * If `indent-tabs-mode' is nil:
    empty		1. empty lines at beginning of buffer.
@@ -37334,7 +37466,7 @@ Report if some of the following whitespace problems exist:
    trailing		3. SPACEs or TABs at end of line.
    indentation		4. TABS at beginning of line.
    space-before-tab	5. SPACEs before TAB.
-   space-after-tab	6. 8 or more SPACEs after TAB.
+   space-after-tab	6. `tab-width' or more SPACEs after TAB.
 
 See `whitespace-style' for documentation.
 See also `whitespace-cleanup' and `whitespace-cleanup-region' for

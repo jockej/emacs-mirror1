@@ -22,6 +22,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <limits.h>		/* For CHAR_BIT.  */
 #include <signal.h>		/* For SIGABRT, SIGDANGER.  */
 
@@ -96,7 +97,7 @@ static bool valgrind_p;
 #include "w32heap.h"	/* for sbrk */
 #endif
 
-#if defined DOUG_LEA_MALLOC || defined GNU_LINUX
+#ifdef GNU_LINUX
 /* The address where the heap starts.  */
 void *
 my_heap_start (void)
@@ -129,7 +130,9 @@ malloc_initialize_hook (void)
 
   if (! initialized)
     {
+#ifdef GNU_LINUX
       my_heap_start ();
+#endif
       malloc_using_checking = getenv ("MALLOC_CHECK_") != NULL;
     }
   else
@@ -170,31 +173,34 @@ voidfuncptr __MALLOC_HOOK_VOLATILE __malloc_initialize_hook EXTERNALLY_VISIBLE
 
 #endif
 
+#if defined DOUG_LEA_MALLOC || !defined CANNOT_DUMP
+
 /* Allocator-related actions to do just before and after unexec.  */
 
 void
 alloc_unexec_pre (void)
 {
-#ifdef DOUG_LEA_MALLOC
+# ifdef DOUG_LEA_MALLOC
   malloc_state_ptr = malloc_get_state ();
   if (!malloc_state_ptr)
     fatal ("malloc_get_state: %s", strerror (errno));
-#endif
-#ifdef HYBRID_MALLOC
+# endif
+# ifdef HYBRID_MALLOC
   bss_sbrk_did_unexec = true;
-#endif
+# endif
 }
 
 void
 alloc_unexec_post (void)
 {
-#ifdef DOUG_LEA_MALLOC
+# ifdef DOUG_LEA_MALLOC
   free (malloc_state_ptr);
-#endif
-#ifdef HYBRID_MALLOC
+# endif
+# ifdef HYBRID_MALLOC
   bss_sbrk_did_unexec = false;
-#endif
+# endif
 }
+#endif
 
 /* Mark, unmark, query mark bit of a Lisp string.  S must be a pointer
    to a struct Lisp_String.  */
@@ -431,10 +437,6 @@ struct mem_node
   /* Memory type.  */
   enum mem_type type;
 };
-
-/* Base address of stack.  Set in main.  */
-
-Lisp_Object *stack_base;
 
 /* Root of the tree describing allocated Lisp memory.  */
 
@@ -3184,8 +3186,7 @@ vector_nbytes (struct Lisp_Vector *v)
 }
 
 /* Release extra resources still in use by VECTOR, which may be any
-   vector-like object.  For now, this is used just to free data in
-   font objects.  */
+   vector-like object.  */
 
 static void
 cleanup_vector (struct Lisp_Vector *vector)
@@ -3195,7 +3196,7 @@ cleanup_vector (struct Lisp_Vector *vector)
       && ((vector->header.size & PSEUDOVECTOR_SIZE_MASK)
 	  == FONT_OBJECT_MAX))
     {
-      struct font_driver *drv = ((struct font *) vector)->driver;
+      struct font_driver const *drv = ((struct font *) vector)->driver;
 
       /* The font driver might sometimes be NULL, e.g. if Emacs was
 	 interrupted before it had time to set it up.  */
@@ -3206,6 +3207,13 @@ cleanup_vector (struct Lisp_Vector *vector)
 	  drv->close ((struct font *) vector);
 	}
     }
+
+  if (PSEUDOVECTOR_TYPEP (&vector->header, PVEC_THREAD))
+    finalize_one_thread ((struct thread_state *) vector);
+  else if (PSEUDOVECTOR_TYPEP (&vector->header, PVEC_MUTEX))
+    finalize_one_mutex ((struct Lisp_Mutex *) vector);
+  else if (PSEUDOVECTOR_TYPEP (&vector->header, PVEC_CONDVAR))
+    finalize_one_condvar ((struct Lisp_CondVar *) vector);
 }
 
 /* Reclaim space used by unmarked vectors.  */
@@ -3561,7 +3569,7 @@ init_symbol (Lisp_Object val, Lisp_Object name)
   set_symbol_next (val, NULL);
   p->gcmarkbit = false;
   p->interned = SYMBOL_UNINTERNED;
-  p->constant = 0;
+  p->trapped_write = SYMBOL_UNTRAPPED_WRITE;
   p->declared_special = false;
   p->pinned = false;
 }
@@ -5050,20 +5058,94 @@ test_setjmp (void)
    would be necessary, each one starting with one byte more offset
    from the stack start.  */
 
-static void
-mark_stack (void *end)
+void
+mark_stack (char *bottom, char *end)
 {
-
   /* This assumes that the stack is a contiguous region in memory.  If
      that's not the case, something has to be done here to iterate
      over the stack segments.  */
-  mark_memory (stack_base, end);
+  mark_memory (bottom, end);
 
   /* Allow for marking a secondary stack, like the register stack on the
      ia64.  */
 #ifdef GC_MARK_SECONDARY_STACK
   GC_MARK_SECONDARY_STACK ();
 #endif
+}
+
+/* This is a trampoline function that flushes registers to the stack,
+   and then calls FUNC.  ARG is passed through to FUNC verbatim.
+
+   This function must be called whenever Emacs is about to release the
+   global interpreter lock.  This lets the garbage collector easily
+   find roots in registers on threads that are not actively running
+   Lisp.
+
+   It is invalid to run any Lisp code or to allocate any GC memory
+   from FUNC.  */
+
+void
+flush_stack_call_func (void (*func) (void *arg), void *arg)
+{
+  void *end;
+  struct thread_state *self = current_thread;
+
+#ifdef HAVE___BUILTIN_UNWIND_INIT
+  /* Force callee-saved registers and register windows onto the stack.
+     This is the preferred method if available, obviating the need for
+     machine dependent methods.  */
+  __builtin_unwind_init ();
+  end = &end;
+#else /* not HAVE___BUILTIN_UNWIND_INIT */
+#ifndef GC_SAVE_REGISTERS_ON_STACK
+  /* jmp_buf may not be aligned enough on darwin-ppc64 */
+  union aligned_jmpbuf {
+    Lisp_Object o;
+    sys_jmp_buf j;
+  } j;
+  volatile bool stack_grows_down_p = (char *) &j > (char *) stack_bottom;
+#endif
+  /* This trick flushes the register windows so that all the state of
+     the process is contained in the stack.  */
+  /* Fixme: Code in the Boehm GC suggests flushing (with `flushrs') is
+     needed on ia64 too.  See mach_dep.c, where it also says inline
+     assembler doesn't work with relevant proprietary compilers.  */
+#ifdef __sparc__
+#if defined (__sparc64__) && defined (__FreeBSD__)
+  /* FreeBSD does not have a ta 3 handler.  */
+  asm ("flushw");
+#else
+  asm ("ta 3");
+#endif
+#endif
+
+  /* Save registers that we need to see on the stack.  We need to see
+     registers used to hold register variables and registers used to
+     pass parameters.  */
+#ifdef GC_SAVE_REGISTERS_ON_STACK
+  GC_SAVE_REGISTERS_ON_STACK (end);
+#else /* not GC_SAVE_REGISTERS_ON_STACK */
+
+#ifndef GC_SETJMP_WORKS  /* If it hasn't been checked yet that
+			    setjmp will definitely work, test it
+			    and print a message with the result
+			    of the test.  */
+  if (!setjmp_tested_p)
+    {
+      setjmp_tested_p = 1;
+      test_setjmp ();
+    }
+#endif /* GC_SETJMP_WORKS */
+
+  sys_setjmp (j.j);
+  end = stack_grows_down_p ? (char *) &j + sizeof j : (char *) &j;
+#endif /* not GC_SAVE_REGISTERS_ON_STACK */
+#endif /* not HAVE___BUILTIN_UNWIND_INIT */
+
+  self->stack_top = end;
+  (*func) (arg);
+
+  eassert (current_thread == self);
 }
 
 static bool
@@ -5222,6 +5304,8 @@ pure_alloc (size_t size, int type)
 }
 
 
+#ifndef CANNOT_DUMP
+
 /* Print a warning if PURESIZE is too small.  */
 
 void
@@ -5232,6 +5316,7 @@ check_pure_size (void)
 	      " bytes needed)"),
 	     pure_bytes_used + pure_bytes_used_before_overflow);
 }
+#endif
 
 
 /* Find the byte sequence {DATA[0], ..., DATA[NBYTES-1], '\0'} from
@@ -5606,7 +5691,11 @@ compact_font_caches (void)
   for (t = terminal_list; t; t = t->next_terminal)
     {
       Lisp_Object cache = TERMINAL_FONT_CACHE (t);
-      if (CONSP (cache))
+      /* Inhibit compacting the caches if the user so wishes.  Some of
+	 the users don't mind a larger memory footprint, but do mind
+	 slower redisplay.  */
+      if (!inhibit_compacting_font_caches
+	  && CONSP (cache))
 	{
 	  Lisp_Object entry;
 
@@ -5764,24 +5853,14 @@ garbage_collect_1 (void *end)
     mark_object (*staticvec[i]);
 
   mark_pinned_symbols ();
-  mark_specpdl ();
   mark_terminals ();
   mark_kboards ();
+  mark_threads ();
 
 #ifdef USE_GTK
   xg_mark_data ();
 #endif
 
-  mark_stack (end);
-
-  {
-    struct handler *handler;
-    for (handler = handlerlist; handler; handler = handler->next)
-      {
-	mark_object (handler->tag_or_ch);
-	mark_object (handler->val);
-      }
-  }
 #ifdef HAVE_WINDOW_SYSTEM
   mark_fringe_data ();
 #endif
@@ -5812,6 +5891,8 @@ garbage_collect_1 (void *end)
   mark_finalizer_list (&doomed_finalizers);
 
   gc_sweep ();
+
+  unmark_threads ();
 
   /* Clear the mark bits that we set in certain root slots.  */
   VECTOR_UNMARK (&buffer_defaults);
@@ -6027,7 +6108,7 @@ mark_glyph_matrix (struct glyph_matrix *matrix)
    all the references contained in it.  */
 
 #define LAST_MARKED_SIZE 500
-static Lisp_Object last_marked[LAST_MARKED_SIZE];
+Lisp_Object last_marked[LAST_MARKED_SIZE] EXTERNALLY_VISIBLE;
 static int last_marked_index;
 
 /* For debugging--call abort when we cdr down this many
@@ -6939,7 +7020,8 @@ sweep_misc (void)
 	      else if (mblk->markers[i].m.u_any.type == Lisp_Misc_User_Ptr)
 		{
 		  struct Lisp_User_Ptr *uptr = &mblk->markers[i].m.u_user_ptr;
-		  uptr->finalizer (uptr->p);
+		  if (uptr->finalizer)
+		    uptr->finalizer (uptr->p);
 		}
 #endif
               /* Set the type of the freed object to Lisp_Misc_Free.
@@ -7079,7 +7161,7 @@ We divide the value by 1024 to make sure it fits in a Lisp integer.  */)
 {
   Lisp_Object end;
 
-#ifdef HAVE_NS
+#if defined HAVE_NS || !HAVE_SBRK
   /* Avoid warning.  sbrk has no relation to memory allocated anyway.  */
   XSETINT (end, 0);
 #else

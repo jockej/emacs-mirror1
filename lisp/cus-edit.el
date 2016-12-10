@@ -175,9 +175,15 @@
   :group 'emacs)
 
 (defgroup wp nil
-  "Support for editing text files."
-  :tag "Text"
+  "Support for editing text files.
+Use group `text' for this instead.  This group is deprecated."
   :group 'emacs)
+
+(defgroup text nil
+  "Support for editing text files."
+  :group 'emacs
+  ;; Inherit from deprecated `wp' for compatibility, for now.
+  :group 'wp)
 
 (defgroup data nil
   "Support for editing binary data files."
@@ -196,10 +202,6 @@
   "Emulations of other editors."
   :link '(custom-manual "(emacs)Emulation")
   :group 'editing)
-
-(defgroup outlines nil
-  "Support for hierarchical outlining."
-  :group 'wp)
 
 (defgroup external nil
   "Interfacing to external utilities."
@@ -313,7 +315,7 @@
 (defgroup tex nil
   "Code related to the TeX formatter."
   :link '(custom-group-link :tag "Font Lock Faces group" font-lock-faces)
-  :group 'wp)
+  :group 'text)
 
 (defgroup faces nil
   "Support for multiple fonts."
@@ -4360,7 +4362,7 @@ option itself, into the file you specify, overwriting any
 `custom-set-variables' and `custom-set-faces' forms already
 present in that file.  It will not delete any customizations from
 the old custom file.  You should do that manually if that is what you
-want.  You also have to put something like `(load \"CUSTOM-FILE\")
+want.  You also have to put something like (load \"CUSTOM-FILE\")
 in your init file, where CUSTOM-FILE is the actual name of the
 file.  Otherwise, Emacs will not load the file when it starts up,
 and hence will not set `custom-file' to that file either."

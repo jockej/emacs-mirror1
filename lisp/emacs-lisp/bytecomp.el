@@ -1892,12 +1892,13 @@ The value is non-nil if there were no errors, nil if errors."
 		(rename-file tempfile target-file t)
 		(or noninteractive (message "Wrote %s" target-file)))
 	    ;; This is just to give a better error message than write-region
-	    (signal 'file-error
-		    (list "Opening output file"
-			  (if (file-exists-p target-file)
-			      "Cannot overwrite file"
-			    "Directory not writable or nonexistent")
-			  target-file)))
+	    (let ((exists (file-exists-p target-file)))
+	      (signal (if exists 'file-error 'file-missing)
+		      (list "Opening output file"
+			    (if exists
+				"Cannot overwrite file"
+			      "Directory not writable or nonexistent")
+			    target-file))))
 	  (kill-buffer (current-buffer)))
 	(if (and byte-compile-generate-call-tree
 		 (or (eq t byte-compile-generate-call-tree)
@@ -2671,8 +2672,11 @@ If FORM is a lambda or a macro, byte-compile it as a function."
 	       (when (cddr list)
 		 (error "Garbage following &rest VAR in lambda-list")))
 	      ((eq arg '&optional)
-	       (unless (cdr list)
-		 (error "Variable name missing after &optional")))
+	       (when (or (null (cdr list))
+                         (memq (cadr list) '(&optional &rest)))
+		 (error "Variable name missing after &optional"))
+               (when (memq '&optional (cddr list))
+                 (error "Duplicate &optional")))
 	      ((memq arg vars)
 	       (byte-compile-warn "repeated variable %s in lambda-list" arg))
 	      (t

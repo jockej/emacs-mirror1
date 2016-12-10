@@ -1072,13 +1072,25 @@ add your name with a \"-U\" prefix (such as \"-Umark\") to the list."
   :version "20.8"
   :group 'SQL)
 
-(defcustom sql-postgres-login-params `((user :default ,(user-login-name))
-                                       (database :default ,(user-login-name))
-                                       server)
+(defcustom sql-postgres-login-params
+  `((user :default ,(user-login-name))
+    (database :default ,(user-login-name)
+              :completion ,(completion-table-dynamic
+                            (lambda (_) (sql-postgres-list-databases))))
+    server)
   "List of login parameters needed to connect to Postgres."
   :type 'sql-login-params
   :version "24.1"
   :group 'SQL)
+
+(defun sql-postgres-list-databases ()
+  "Return a list of available PostgreSQL databases."
+  (when (executable-find sql-postgres-program)
+    (let ((res '()))
+      (dolist (row (process-lines sql-postgres-program "-ltX"))
+        (when (string-match "^ \\([[:alnum:]-_]+\\) +|.*" row)
+          (push (match-string 1 row) res)))
+      (nreverse res))))
 
 ;; Customization for Interbase
 
@@ -4040,6 +4052,12 @@ is specified in the connection settings."
           (if connect-set
               ;; Set the desired parameters
               (let (param-var login-params set-params rem-params)
+                ;; Set the parameters and start the interactive session
+                (mapc
+                 (lambda (vv)
+                   (set-default (car vv) (eval (cadr vv))))
+                 (cdr connect-set))
+                (setq-default sql-connection connection)
 
                 ;; :sqli-login params variable
                 (setq param-var
@@ -4068,13 +4086,6 @@ is specified in the connection settings."
                        (lambda (token plist)
                            (unless (member token set-params)
                              (if plist (cons token plist) token)))))
-
-                ;; Set the parameters and start the interactive session
-                (mapc
-                 (lambda (vv)
-                     (set-default (car vv) (eval (cadr vv))))
-                 (cdr connect-set))
-                (setq-default sql-connection connection)
 
                 ;; Start the SQLi session with revised list of login parameters
                 (eval `(let ((,param-var ',rem-params))

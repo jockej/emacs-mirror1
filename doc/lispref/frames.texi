@@ -764,7 +764,7 @@ its size using the @code{height} and @code{width} parameters
 with sizes and positions.  For all of these functions the argument
 @var{frame} must denote a live frame and defaults to the selected frame.
 
-@defun frame-position &optional Lisp_Object &optional frame
+@defun frame-position &optional frame
 This function returns the outer position (@pxref{Frame Layout}) of
 @var{frame} in pixels.  The value is a cons giving the coordinates of
 the top left corner of the outer frame of @var{frame} relative to an
@@ -772,9 +772,9 @@ origin at the position (0, 0) of the frame's display.  On a text
 terminal frame both values are zero.
 @end defun
 
-@defun set-frame-position frame X Y
-This function sets the outer frame position of @var{frame} to @var{X}
-and @var{Y}.  The latter arguments specify pixels and normally count
+@defun set-frame-position frame x y
+This function sets the outer frame position of @var{frame} to @var{x}
+and @var{y}.  The latter arguments specify pixels and normally count
 from an origin at the position (0, 0) of @var{frame}'s display.
 
 A negative parameter value positions the right edge of the outer frame
@@ -1539,6 +1539,13 @@ prevent hanging with those window managers.
 If non-@code{nil}, the frame is visible on all virtual desktops on systems
 with virtual desktops.
 
+@vindex inhibit-double-buffering, a frame parameter
+@item inhibit-double-buffering
+If non-@code{nil}, the frame is drawn to the screen without double buffering.
+Emacs normally attempts to use double buffering, where available, to
+reduce flicker.  Set this property if you experience display bugs or
+pine for that retro, flicker-y feeling.
+
 @ignore
 @vindex parent-id, a frame parameter
 @item parent-id
@@ -1992,8 +1999,7 @@ Window Ordering}.
 
 Normally, each frame has its own minibuffer window at the bottom, which
 is used whenever that frame is selected.  If the frame has a minibuffer,
-you can get it with @code{minibuffer-window} (@pxref{Definition of
-minibuffer-window}).
+you can get it with @code{minibuffer-window} (@pxref{Minibuffer Windows}).
 
 @cindex frame without a minibuffer
 @cindex surrogate minibuffer frame
@@ -2210,6 +2216,12 @@ Parameters}.  The user can also iconify and deiconify frames with the
 window manager.  This happens below the level at which Emacs can exert
 any control, but Emacs does provide events that you can use to keep
 track of such changes.  @xref{Misc Events}.
+
+@defun x-double-buffered-p &optional frame
+This function returns non-@code{nil} if @var{frame} is currently
+being rendered with double buffering.  @var{frame} defaults to the
+selected frame.
+@end defun
 
 @node Raising and Lowering
 @section Raising and Lowering Frames

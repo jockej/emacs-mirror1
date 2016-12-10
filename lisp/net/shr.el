@@ -1,4 +1,4 @@
-;;; shr.el --- Simple HTML Renderer
+;;; shr.el --- Simple HTML Renderer -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2010-2016 Free Software Foundation, Inc.
 
@@ -68,7 +68,7 @@ fit these criteria."
 
 (defcustom shr-use-colors t
   "If non-nil, respect color specifications in the HTML."
-  :version "25.2"
+  :version "26.1"
   :group 'shr
   :type 'boolean)
 
@@ -540,6 +540,9 @@ size, and full-buffer size."
       (current-column)
     (if (not (get-buffer-window (current-buffer)))
 	(save-window-excursion
+          ;; Avoid errors if the selected window is a dedicated one,
+          ;; and they just want to insert a document into it.
+          (set-window-dedicated-p nil nil)
 	  (set-window-buffer nil (current-buffer))
 	  (car (window-text-pixel-size nil (line-beginning-position) (point))))
       (car (window-text-pixel-size nil (line-beginning-position) (point))))))
@@ -1529,7 +1532,7 @@ The preference is a float determined from `shr-prefer-media-type'."
       (setq srcset
             (sort (mapcar
                    (lambda (elem)
-                     (let ((spec (split-string elem " ")))
+                     (let ((spec (split-string elem "[\t\n\r ]+")))
                        (cond
                         ((= (length spec) 1)
                          ;; Make sure it's well formed.
@@ -1543,7 +1546,9 @@ The preference is a float determined from `shr-prefer-media-type'."
                         (t
                          (list (car spec)
                                (string-to-number (cadr spec)))))))
-                   (split-string srcset ", "))
+                   (split-string (replace-regexp-in-string
+				  "\\`[\t\n\r ]+\\|[\t\n\r ]+\\'" "" srcset)
+				 "[\t\n\r ]*,[\t\n\r ]*"))
                   (lambda (e1 e2)
                     (> (cadr e1) (cadr e2)))))
       ;; Choose the smallest picture that's bigger than the current
@@ -1582,7 +1587,7 @@ The preference is a float determined from `shr-prefer-media-type'."
          (max-height (and edges
                           (truncate (* shr-max-image-proportion
                                        (- (nth 3 edges) (nth 1 edges))))))
-         svg image)
+         svg)
     (when (and max-width
                (> width max-width))
       (setq height (truncate (* (/ (float max-width) width) height))
@@ -1893,14 +1898,62 @@ The preference is a float determined from `shr-prefer-media-type'."
 			   bgcolor))
     ;; Finally, insert all the images after the table.  The Emacs buffer
     ;; model isn't strong enough to allow us to put the images actually
-    ;; into the tables.
+    ;; into the tables.  It inserts also non-td/th objects.
     (when (zerop shr-table-depth)
       (save-excursion
 	(shr-expand-alignments start (point)))
-      (dolist (elem (dom-by-tag dom 'object))
-	(shr-tag-object elem))
-      (dolist (elem (dom-by-tag dom 'img))
-	(shr-tag-img elem)))))
+      (let ((strings (shr-collect-extra-strings-in-table dom)))
+	(when strings
+	  (save-restriction
+	    (narrow-to-region (point) (point))
+	    (insert (mapconcat #'identity strings "\n"))
+	    (shr-fill-lines (point-min) (point-max))))))))
+
+(defun shr-collect-extra-strings-in-table (dom &optional flags)
+  "Return extra strings in DOM of which the root is a table clause.
+Render <img>s and <object>s, and strings and child <table>s of which
+the parent <td> or <th> is lacking.  FLAGS is a cons of two boolean
+flags that control whether to collect or render objects."
+  ;; This function runs recursively and collects strings if the cdr of
+  ;; FLAGS is nil and the car is not nil, and it renders also child
+  ;; <table>s if the cdr is nil.  Note: FLAGS may be nil, not a cons.
+  ;; FLAGS becomes (t . nil) if a <tr> clause is found in the children
+  ;; of DOM, and becomes (t . t) if a <td> or a <th> clause is found
+  ;; and the car is t then.  When a <table> clause is found, FLAGS
+  ;; becomes nil if the cdr is t then.  But if FLAGS is (t . nil) then,
+  ;; it renders the <table>.
+  (cl-loop for child in (dom-children dom) with recurse with tag
+	   do (setq recurse nil)
+	   if (stringp child)
+	     unless (or (not (car flags)) (cdr flags))
+	       when (string-match "\\(?:[^\t\n\r ]+[\t\n\r ]+\\)*[^\t\n\r ]+"
+				  child)
+		 collect (match-string 0 child)
+	       end end
+	   else if (consp child)
+	     do (setq tag (dom-tag child)) and
+	     unless (memq tag '(comment style))
+	       if (eq tag 'img)
+		 do (shr-tag-img child)
+	       else if (eq tag 'object)
+		 do (shr-tag-object child)
+	       else
+		 do (setq recurse t) and
+		 if (eq tag 'tr)
+		   do (setq flags '(t . nil))
+		 else if (memq tag '(td th))
+		   when (car flags)
+		     do (setq flags '(t . t))
+		   end
+		 else if (eq tag 'table)
+		   if (cdr flags)
+		     do (setq flags nil)
+		   else if (car flags)
+		     do (setq recurse nil)
+			(shr-tag-table child)
+		   end end end end end end end end end end
+	   when recurse
+	     append (shr-collect-extra-strings-in-table child flags)))
 
 (defun shr-insert-table (table widths)
   (let* ((collapse (equal (cdr (assq 'border-collapse shr-stylesheet))
@@ -1919,7 +1972,7 @@ The preference is a float determined from `shr-prefer-media-type'."
 		      (dolist (column row)
 			(setq max (max max (nth 2 column))))
 		      max)))
-	(dotimes (i (max height 1))
+	(dotimes (_ (max height 1))
 	  (shr-indent)
 	  (insert shr-table-vertical-line "\n"))
 	(dolist (column row)
@@ -1927,7 +1980,7 @@ The preference is a float determined from `shr-prefer-media-type'."
 	    (goto-char start)
 	    ;; Sum up all the widths from the column.  (There may be
 	    ;; more than one if this is a "colspan" column.)
-	    (dotimes (i (nth 4 column))
+	    (dotimes (_ (nth 4 column))
 	      ;; The colspan directive may be wrong and there may not be
 	      ;; that number of columns.
 	      (when (<= column-number (1- (length widths)))
@@ -1958,7 +2011,7 @@ The preference is a float determined from `shr-prefer-media-type'."
 		(forward-line 1))
 	      ;; Add blank lines at padding at the bottom of the TD,
 	      ;; possibly.
-	      (dotimes (i (- height (length lines)))
+	      (dotimes (_ (- height (length lines)))
 		(end-of-line)
 		(let ((start (point)))
 		  (insert (propertize " "
@@ -2140,7 +2193,7 @@ The preference is a float determined from `shr-prefer-media-type'."
 		      (push data tds)))))
 	      (when (and colspan
 			 (> colspan 1))
-		(dotimes (c (1- colspan))
+		(dotimes (_ (1- colspan))
 		  (setq i (1+ i))
 		  (push
 		   (if fill

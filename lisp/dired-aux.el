@@ -990,12 +990,12 @@ output file. %i path(s) are relative, while %o is absolute.")
 ;;;###autoload
 (defun dired-do-compress-to ()
   "Compress selected files and directories to an archive.
-You are prompted for the archive name.
-The archiving command is chosen based on the archive name extension and
-`dired-compress-files-alist'."
+Prompt for the archive file name.
+Choose the archiving command based on the archive file-name extension
+and `dired-compress-files-alist'."
   (interactive)
   (let* ((in-files (dired-get-marked-files))
-         (out-file (read-file-name "Compress to: "))
+         (out-file (expand-file-name (read-file-name "Compress to: ")))
          (rule (cl-find-if
                 (lambda (x)
                   (string-match (car x) out-file))
@@ -1012,11 +1012,13 @@ The archiving command is chosen based on the archive name extension and
           (t
            (when (zerop
                   (dired-shell-command
-                   (replace-regexp-in-string
-                    "%o" out-file
-                    (replace-regexp-in-string
-                     "%i" (mapconcat #'file-name-nondirectory in-files " ")
-                     (cdr rule)))))
+                   (format-spec (cdr rule)
+                                `((?\o . ,(shell-quote-argument out-file))
+                                  (?\i . ,(mapconcat
+                                           (lambda (file-desc)
+                                             (shell-quote-argument (file-name-nondirectory
+                                                                    file-desc)))
+                                           in-files " "))))))
              (message "Compressed %d file(s) to %s"
                       (length in-files)
                       (file-name-nondirectory out-file)))))))
@@ -1799,13 +1801,14 @@ Optional arg HOW-TO determines how to treat the target.
 		     (concat (if dired-one-file op1 operation) " %s to: ")
 		     target-dir op-symbol arg rfn-list default))))
 	 (into-dir (cond ((null how-to)
-			  ;; Allow DOS/Windows users to change the letter
-			  ;; case of a directory.  If we don't test these
-			  ;; conditions up front, file-directory-p below
-			  ;; will return t because the filesystem is
-			  ;; case-insensitive, and Emacs will try to move
+			  ;; Allow users to change the letter case of
+			  ;; a directory on a case-insensitive
+			  ;; filesystem.  If we don't test these
+			  ;; conditions up front, file-directory-p
+			  ;; below will return t on a case-insensitive
+			  ;; filesystem, and Emacs will try to move
 			  ;; foo -> foo/foo, which fails.
-			  (if (and (memq system-type '(ms-dos windows-nt cygwin))
+			  (if (and (file-name-case-insensitive-p (car fn-list))
 				   (eq op-symbol 'move)
 				   dired-one-file
 				   (string= (downcase

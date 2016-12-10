@@ -1,4 +1,4 @@
-;;; message.el --- composing mail and news messages
+;;; message.el --- composing mail and news messages -*- lexical-binding: t -*-
 
 ;; Copyright (C) 1996-2016 Free Software Foundation, Inc.
 
@@ -1353,7 +1353,7 @@ If nil, you might be asked to input the charset."
   :type 'symbol)
 (make-obsolete-variable
  'message-default-charset
- "The default charset comes from the language environment" "25.2")
+ "The default charset comes from the language environment" "26.1")
 
 (defcustom message-dont-reply-to-names mail-dont-reply-to-names
   "Addresses to prune when doing wide replies.
@@ -1764,7 +1764,7 @@ no, only reply back to the author."
 
 (defcustom message-use-idna t
   "Whether to encode non-ASCII in domain names into ASCII according to IDNA."
-  :version "25.2"
+  :version "26.1"
   :group 'message-headers
   :link '(custom-manual "(message)IDNA")
   :type '(choice (const :tag "Ask" ask)
@@ -4481,7 +4481,7 @@ This function could be useful in `message-setup-hook'."
 
 (declare-function hashcash-wait-async "hashcash" (&optional buffer))
 
-(defun message-send-mail (&optional arg)
+(defun message-send-mail (&optional _)
   (require 'mail-utils)
   (let* ((tembuf (message-generate-new-buffer-clone-locals " message temp"))
 	 (case-fold-search nil)
@@ -4638,6 +4638,8 @@ If you always want Gnus to send messages in one piece, set
     (push 'mail message-sent-message-via)))
 
 (defvar sendmail-program)
+(defvar smtpmail-smtp-server)
+(defvar smtpmail-smtp-service)
 (defvar smtpmail-smtp-user)
 
 (defun message-multi-smtp-send-mail ()
@@ -4816,6 +4818,8 @@ The only difference from `mailclient-send-it' is that this
 command evaluates `message-send-mail-hook' just before sending a message."
   (run-hooks 'message-send-mail-hook)
   (mailclient-send-it))
+
+(defvar sha1-maximum-internal-length)
 
 (defun message-canlock-generate ()
   "Return a string that is non-trivial to guess.

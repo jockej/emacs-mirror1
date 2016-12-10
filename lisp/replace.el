@@ -1,4 +1,4 @@
-;;; replace.el --- replace commands for Emacs
+;;; replace.el --- replace commands for Emacs -*- lexical-binding: t -*-
 
 ;; Copyright (C) 1985-1987, 1992, 1994, 1996-1997, 2000-2016 Free
 ;; Software Foundation, Inc.
@@ -27,6 +27,8 @@
 ;; documented in the Emacs user's manual.
 
 ;;; Code:
+
+(eval-when-compile (require 'cl-lib))
 
 (defcustom case-replace t
   "Non-nil means `query-replace' should preserve case in replacements."
@@ -172,7 +174,7 @@ wants to replace FROM with TO."
 	      (propertize "\0"
 			  'display query-replace-from-to-separator
 			  'separator t)))
-	   (query-replace-from-to-history
+	   (minibuffer-history
 	    (append
 	     (when separator
 	       (mapcar (lambda (from-to)
@@ -184,7 +186,7 @@ wants to replace FROM with TO."
 	   (minibuffer-allow-text-properties t) ; separator uses text-properties
 	   (prompt
 	    (if (and query-replace-defaults separator)
-		(format "%s (default %s): " prompt (car query-replace-from-to-history))
+		(format "%s (default %s): " prompt (car minibuffer-history))
 	      (format "%s: " prompt)))
 	   (from
 	    ;; The save-excursion here is in case the user marks and copies
@@ -196,9 +198,9 @@ wants to replace FROM with TO."
                     (setq-local text-property-default-nonsticky
                                 (cons '(separator . t) text-property-default-nonsticky)))
                 (if regexp-flag
-                    (read-regexp prompt nil 'query-replace-from-to-history)
+                    (read-regexp prompt nil 'minibuffer-history)
                   (read-from-minibuffer
-                   prompt nil nil nil 'query-replace-from-to-history
+                   prompt nil nil nil nil
                    (car (if regexp-flag regexp-search-ring search-ring)) t)))))
            (to))
       (if (and (zerop (length from)) query-replace-defaults)
@@ -1408,7 +1410,7 @@ See also `multi-occur-in-matching-buffers'."
 				"Next buffer to search (RET to end): ")
 			      nil t))
 		   ""))
-	(add-to-list 'bufs buf)
+	(cl-pushnew buf bufs)
 	(setq ido-ignore-item-temp-list bufs))
       (nreverse (mapcar #'get-buffer bufs)))
     (occur-read-primary-args)))
@@ -1945,7 +1947,6 @@ type them using Lisp syntax."
 
 (defun replace-eval-replacement (expression count)
   (let* ((replace-count count)
-         err
          (replacement
           (condition-case err
               (eval expression)
@@ -2046,7 +2047,7 @@ It is called with three arguments, as if it were
 `re-search-forward'.")
 
 (defun replace-search (search-string limit regexp-flag delimited-flag
-		       case-fold-search &optional backward)
+		       case-fold &optional backward)
   "Search for the next occurrence of SEARCH-STRING to replace."
   ;; Let-bind global isearch-* variables to values used
   ;; to search the next replacement.  These let-bindings
@@ -2065,7 +2066,7 @@ It is called with three arguments, as if it were
 	  replace-lax-whitespace)
 	 (isearch-regexp-lax-whitespace
 	  replace-regexp-lax-whitespace)
-	 (isearch-case-fold-search case-fold-search)
+	 (isearch-case-fold-search case-fold)
 	 (isearch-adjusted nil)
 	 (isearch-nonincremental t)	; don't use lax word mode
 	 (isearch-forward (not backward))
@@ -2080,7 +2081,7 @@ It is called with three arguments, as if it were
 
 (defun replace-highlight (match-beg match-end range-beg range-end
 			  search-string regexp-flag delimited-flag
-			  case-fold-search &optional backward)
+			  case-fold &optional backward)
   (if query-replace-highlight
       (if replace-overlay
 	  (move-overlay replace-overlay match-beg match-end (current-buffer))
@@ -2095,7 +2096,7 @@ It is called with three arguments, as if it were
 	     replace-lax-whitespace)
 	    (isearch-regexp-lax-whitespace
 	     replace-regexp-lax-whitespace)
-	    (isearch-case-fold-search case-fold-search)
+	    (isearch-case-fold-search case-fold)
 	    (isearch-forward (not backward))
 	    (isearch-other-end match-beg)
 	    (isearch-error nil))
@@ -2642,5 +2643,7 @@ It must return a string."
 			      ", "))
 		   "")))
     (or (and keep-going stack) multi-buffer)))
+
+(provide 'replace)
 
 ;;; replace.el ends here

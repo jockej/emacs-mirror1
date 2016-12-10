@@ -1,4 +1,4 @@
-;;; ps-print.el --- print text from the buffer as PostScript
+;;; ps-print.el --- print text from the buffer as PostScript -*- lexical-binding: t -*-
 
 ;; Copyright (C) 1993-2016 Free Software Foundation, Inc.
 
@@ -1495,7 +1495,7 @@ Please send all bug fixes and enhancements to
   :link '(emacs-library-link :tag "Source Lisp File" "ps-print.el")
   :prefix "ps-"
   :version "20"
-  :group 'wp
+  :group 'text
   :group 'postscript)
 
 (defgroup ps-print-horizontal nil
