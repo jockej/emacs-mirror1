@@ -41,6 +41,16 @@ overlay_tree_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
                  ptrdiff_t *idx);
 
 void
+overlay_tree_around (struct Lisp_Overlay *tree, ptrdiff_t pos,
+                     ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
+                     ptrdiff_t *idx);
+
+void
+overlay_tree_endpoint_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
+                          struct window *w, ptrdiff_t *vec_size,
+                          Lisp_Object **vec_ptr, ptrdiff_t *idx);
+
+void
 overlay_tree_evap (struct Lisp_Overlay *tree, ptrdiff_t pos,
                    ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
                    ptrdiff_t *idx);

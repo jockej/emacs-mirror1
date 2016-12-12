@@ -5829,8 +5829,43 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
 	RECORD_OVERLAY_STRING (overlay, str, true);
     }
 
-#undef RECORD_OVERLAY_STRING
 #endif
+
+
+  ptrdiff_t  noverlays = 0;
+  ptrdiff_t overlay_vec_size = 40;
+  Lisp_Object *overlay_vec;
+  overlay_vec = xnmalloc (overlay_vec_size,
+                          sizeof (*overlay_vec));
+  overlay_tree_endpoint_at (current_buffer->overlays_root,
+                            charpos, it->w, &overlay_vec_size,
+                            &overlay_vec, &noverlays);
+
+  for (ptrdiff_t i = 0; i < n; i++)
+    {
+      overlay = overlay_vec[i];
+      ptrdiff_t start = XOVERLAY (overlay)->char_start;
+      ptrdiff_t end = XOVERLAY (overlay)->char_end;
+
+      /* If the text ``under'' the overlay is invisible, it has a zero
+	 dimension, and both before- and after-strings apply.  */
+      invisible = Foverlay_get (overlay, Qinvisible);
+      invis = TEXT_PROP_MEANS_INVISIBLE (invisible);
+
+      if ((start == charpos || (end == charpos && invis != 0))
+	  && (str = Foverlay_get (overlay, Qbefore_string), STRINGP (str))
+	  && SCHARS (str))
+	RECORD_OVERLAY_STRING (overlay, str, false);
+
+      /* If overlay has a non-empty after-string, record it.  */
+      if ((end == charpos || (start == charpos && invis != 0))
+	  && (str = Foverlay_get (overlay, Qafter_string), STRINGP (str))
+	  && SCHARS (str))
+	RECORD_OVERLAY_STRING (overlay, str, true);
+    }
+  xfree (overlay_vec);
+
+#undef RECORD_OVERLAY_STRING
 
   /* Sort entries.  */
   if (n > 1)

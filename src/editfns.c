@@ -533,9 +533,9 @@ at POSITION.  */)
       ptrdiff_t noverlays;
       Lisp_Object *overlay_vec, tem;
       struct buffer *obuf = current_buffer;
-      USE_SAFE_ALLOCA;
+      /* USE_SAFE_ALLOCA; */
 
-/* #ifdef OVERLAYS_FIX */
+#ifdef OVERLAYS_FIX
       set_buffer_temp (XBUFFER (object));
 
       /* First try with room for 40 overlays.  */
@@ -554,7 +554,15 @@ at POSITION.  */)
       noverlays = sort_overlays (overlay_vec, noverlays, NULL);
 
       set_buffer_temp (obuf);
-/* #endif */
+#endif
+      noverlays = 0;
+      ptrdiff_t overlay_vec_size = 40;
+      overlay_vec = xnmalloc (overlay_vec_size,
+                              sizeof (*overlay_vec));
+      overlay_tree_around (XBUFFER (object)->overlays_root,
+                           posn, &overlay_vec_size,
+                           &overlay_vec, &noverlays);
+
 
       /* Now check the overlays in order of decreasing priority.  */
       while (--noverlays >= 0)
@@ -581,13 +589,14 @@ at POSITION.  */)
 #endif
 	      else
 		{
-		  SAFE_FREE ();
+		  /* SAFE_FREE (); */
+                  xfree (overlay_vec);
 		  return tem;
 		}
 	    }
 	}
-      SAFE_FREE ();
-
+      /* SAFE_FREE (); */
+      xfree (overlay_vec);
       { /* Now check the text properties.  */
 	int stickiness = text_property_stickiness (prop, position, object);
 	if (stickiness > 0)

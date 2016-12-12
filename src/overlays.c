@@ -449,18 +449,63 @@ overlay_tree_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
     {
       if (tree->char_end > pos)
       add_to_vec(tree, vec_ptr, vec_size, idx);
-      /* printf("going right\n"); */
       overlay_tree_at (tree->right, pos, vec_size, vec_ptr, idx);
     }
-  /* printf("going left\n"); */
   overlay_tree_at (tree->left, pos, vec_size, vec_ptr, idx);
 }
+
+/* This is exactly like `overlay_tree_at', except this also includes
+   overlays whose end is >= POS.  */
+void
+overlay_tree_around (struct Lisp_Overlay *tree, ptrdiff_t pos,
+                     ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
+                     ptrdiff_t *idx)
+{
+  CHECK_TREE (tree);
+  if (tree == OVERLAY_SENTINEL || tree->max < pos)
+    return;
+
+  if (tree->char_start <= pos)
+    {
+      if (tree->char_end >= pos)
+      add_to_vec(tree, vec_ptr, vec_size, idx);
+      overlay_tree_around (tree->right, pos, vec_size, vec_ptr, idx);
+    }
+  overlay_tree_around (tree->left, pos, vec_size, vec_ptr, idx);
+}
+
+void
+overlay_tree_endpoint_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
+                          struct window *w, ptrdiff_t *vec_size,
+                          Lisp_Object **vec_ptr, ptrdiff_t *idx)
+{
+  CHECK_TREE (tree);
+  if (tree == OVERLAY_SENTINEL || tree->max < pos)
+    return;
+
+  if (tree->char_start == pos || tree->char_end == pos)
+    {
+      Lisp_Object win =  lookup_char_property (tree->plist, Qwindow, 0);
+      if (WINDOWP (win) && XWINDOW (win) == w)
+        {
+          add_to_vec (tree, vec_ptr, vec_size, idx);
+        }
+    }
+
+  if (tree->char_start <= pos)
+    overlay_tree_endpoint_at (tree->right, pos, w,
+                              vec_size, vec_ptr, idx);
+  overlay_tree_endpoint_at (tree->left, pos, w,
+                            vec_size, vec_ptr, idx);
+}
+
 
 void
 overlay_tree_evap (struct Lisp_Overlay *tree, ptrdiff_t pos,
                    ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
                    ptrdiff_t *idx)
 {
+  CHECK_TREE (tree);
   if (tree == OVERLAY_SENTINEL || tree->max < pos)
     return;
 
