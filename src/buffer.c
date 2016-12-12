@@ -25,6 +25,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <sys/param.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include <verify.h>
@@ -47,8 +48,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #ifdef WINDOWSNT
 #include "w32heap.h"		/* for mmap_* */
 #endif
-
-struct buffer *current_buffer;		/* The current buffer.  */
 
 /* First buffer in chain of all buffers (in reverse order of creation).
    Threaded through ->header.next.buffer.  */
@@ -935,40 +934,54 @@ reset_buffer_local_variables (struct buffer *b, bool permanent_too)
     bset_local_var_alist (b, Qnil);
   else
     {
-      Lisp_Object tmp, prop, last = Qnil;
+      Lisp_Object tmp, last = Qnil;
       for (tmp = BVAR (b, local_var_alist); CONSP (tmp); tmp = XCDR (tmp))
-	if (!NILP (prop = Fget (XCAR (XCAR (tmp)), Qpermanent_local)))
-	  {
-	    /* If permanent-local, keep it.  */
-	    last = tmp;
-	    if (EQ (prop, Qpermanent_local_hook))
-	      {
-		/* This is a partially permanent hook variable.
-		   Preserve only the elements that want to be preserved.  */
-		Lisp_Object list, newlist;
-		list = XCDR (XCAR (tmp));
-		if (!CONSP (list))
-		  newlist = list;
-		else
-		  for (newlist = Qnil; CONSP (list); list = XCDR (list))
-		    {
-		      Lisp_Object elt = XCAR (list);
-		      /* Preserve element ELT if it's t,
-			 if it is a function with a `permanent-local-hook' property,
-			 or if it's not a symbol.  */
-		      if (! SYMBOLP (elt)
-			  || EQ (elt, Qt)
-			  || !NILP (Fget (elt, Qpermanent_local_hook)))
-			newlist = Fcons (elt, newlist);
-		    }
-		XSETCDR (XCAR (tmp), Fnreverse (newlist));
-	      }
-	  }
-	/* Delete this local variable.  */
-	else if (NILP (last))
-	  bset_local_var_alist (b, XCDR (tmp));
-	else
-	  XSETCDR (last, XCDR (tmp));
+        {
+          Lisp_Object local_var = XCAR (XCAR (tmp));
+          Lisp_Object prop = Fget (local_var, Qpermanent_local);
+
+          if (!NILP (prop))
+            {
+              /* If permanent-local, keep it.  */
+              last = tmp;
+              if (EQ (prop, Qpermanent_local_hook))
+                {
+                  /* This is a partially permanent hook variable.
+                     Preserve only the elements that want to be preserved.  */
+                  Lisp_Object list, newlist;
+                  list = XCDR (XCAR (tmp));
+                  if (!CONSP (list))
+                    newlist = list;
+                  else
+                    for (newlist = Qnil; CONSP (list); list = XCDR (list))
+                      {
+                        Lisp_Object elt = XCAR (list);
+                        /* Preserve element ELT if it's t,
+                           if it is a function with a `permanent-local-hook' property,
+                           or if it's not a symbol.  */
+                        if (! SYMBOLP (elt)
+                            || EQ (elt, Qt)
+                            || !NILP (Fget (elt, Qpermanent_local_hook)))
+                          newlist = Fcons (elt, newlist);
+                      }
+                  newlist = Fnreverse (newlist);
+                  if (XSYMBOL (local_var)->trapped_write == SYMBOL_TRAPPED_WRITE)
+                    notify_variable_watchers (local_var, newlist,
+                                              Qmakunbound, Fcurrent_buffer ());
+                  XSETCDR (XCAR (tmp), newlist);
+                  continue; /* Don't do variable write trapping twice.  */
+                }
+            }
+          /* Delete this local variable.  */
+          else if (NILP (last))
+            bset_local_var_alist (b, XCDR (tmp));
+          else
+            XSETCDR (last, XCDR (tmp));
+
+          if (XSYMBOL (local_var)->trapped_write == SYMBOL_TRAPPED_WRITE)
+            notify_variable_watchers (local_var, Qnil,
+                                      Qmakunbound, Fcurrent_buffer ());
+        }
     }
 
   for (i = 0; i < last_per_buffer_idx; ++i)
@@ -1589,6 +1602,9 @@ cleaning up all windows currently displaying the buffer to be killed. */)
 
   /* Avoid trouble for buffer already dead.  */
   if (!BUFFER_LIVE_P (b))
+    return Qnil;
+
+  if (thread_check_current_buffer (b))
     return Qnil;
 
   /* Run hooks with the buffer to be killed the current buffer.  */
@@ -5274,144 +5290,6 @@ syms_of_buffer (void)
   Fput (Qprotected_field, Qerror_message,
 	build_pure_c_string ("Attempt to modify a protected field"));
 
-  DEFVAR_BUFFER_DEFAULTS ("default-mode-line-format",
-			  mode_line_format,
-			  doc: /* Default value of `mode-line-format' for buffers that don't override it.
-This is the same as (default-value \\='mode-line-format).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-header-line-format",
-			  header_line_format,
-			  doc: /* Default value of `header-line-format' for buffers that don't override it.
-This is the same as (default-value \\='header-line-format).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-cursor-type", cursor_type,
-			  doc: /* Default value of `cursor-type' for buffers that don't override it.
-This is the same as (default-value \\='cursor-type).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-line-spacing",
-			  extra_line_spacing,
-			  doc: /* Default value of `line-spacing' for buffers that don't override it.
-This is the same as (default-value \\='line-spacing).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-cursor-in-non-selected-windows",
-			  cursor_in_non_selected_windows,
-			  doc: /* Default value of `cursor-in-non-selected-windows'.
-This is the same as (default-value \\='cursor-in-non-selected-windows).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-abbrev-mode",
-			  abbrev_mode,
-			  doc: /* Default value of `abbrev-mode' for buffers that do not override it.
-This is the same as (default-value \\='abbrev-mode).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-ctl-arrow",
-			  ctl_arrow,
-			  doc: /* Default value of `ctl-arrow' for buffers that do not override it.
-This is the same as (default-value \\='ctl-arrow).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-enable-multibyte-characters",
-			  enable_multibyte_characters,
-			  doc: /* Default value of `enable-multibyte-characters' for buffers not overriding it.
-This is the same as (default-value \\='enable-multibyte-characters).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-buffer-file-coding-system",
-			  buffer_file_coding_system,
-			  doc: /* Default value of `buffer-file-coding-system' for buffers not overriding it.
-This is the same as (default-value \\='buffer-file-coding-system).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-truncate-lines",
-			  truncate_lines,
-			  doc: /* Default value of `truncate-lines' for buffers that do not override it.
-This is the same as (default-value \\='truncate-lines).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-fill-column",
-			  fill_column,
-			  doc: /* Default value of `fill-column' for buffers that do not override it.
-This is the same as (default-value \\='fill-column).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-left-margin",
-			  left_margin,
-			  doc: /* Default value of `left-margin' for buffers that do not override it.
-This is the same as (default-value \\='left-margin).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-tab-width",
-			  tab_width,
-			  doc: /* Default value of `tab-width' for buffers that do not override it.
-NOTE: This controls the display width of a TAB character, and not
-the size of an indentation step.
-This is the same as (default-value \\='tab-width).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-case-fold-search",
-			  case_fold_search,
-			  doc: /* Default value of `case-fold-search' for buffers that don't override it.
-This is the same as (default-value \\='case-fold-search).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-left-margin-width",
-			  left_margin_cols,
-			  doc: /* Default value of `left-margin-width' for buffers that don't override it.
-This is the same as (default-value \\='left-margin-width).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-right-margin-width",
-			  right_margin_cols,
-			  doc: /* Default value of `right-margin-width' for buffers that don't override it.
-This is the same as (default-value \\='right-margin-width).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-left-fringe-width",
-			  left_fringe_width,
-			  doc: /* Default value of `left-fringe-width' for buffers that don't override it.
-This is the same as (default-value \\='left-fringe-width).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-right-fringe-width",
-			  right_fringe_width,
-			  doc: /* Default value of `right-fringe-width' for buffers that don't override it.
-This is the same as (default-value \\='right-fringe-width).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-fringes-outside-margins",
-			  fringes_outside_margins,
-			  doc: /* Default value of `fringes-outside-margins' for buffers that don't override it.
-This is the same as (default-value \\='fringes-outside-margins).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-scroll-bar-width",
-			  scroll_bar_width,
-			  doc: /* Default value of `scroll-bar-width' for buffers that don't override it.
-This is the same as (default-value \\='scroll-bar-width).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-vertical-scroll-bar",
-			  vertical_scroll_bar_type,
-			  doc: /* Default value of `vertical-scroll-bar' for buffers that don't override it.
-This is the same as (default-value \\='vertical-scroll-bar).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-indicate-empty-lines",
-			  indicate_empty_lines,
-			  doc: /* Default value of `indicate-empty-lines' for buffers that don't override it.
-This is the same as (default-value \\='indicate-empty-lines).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-indicate-buffer-boundaries",
-			  indicate_buffer_boundaries,
-			  doc: /* Default value of `indicate-buffer-boundaries' for buffers that don't override it.
-This is the same as (default-value \\='indicate-buffer-boundaries).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-fringe-indicator-alist",
-			  fringe_indicator_alist,
-			  doc: /* Default value of `fringe-indicator-alist' for buffers that don't override it.
-This is the same as (default-value \\='fringe-indicator-alist).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-fringe-cursor-alist",
-			  fringe_cursor_alist,
-			  doc: /* Default value of `fringe-cursor-alist' for buffers that don't override it.
-This is the same as (default-value \\='fringe-cursor-alist).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-scroll-up-aggressively",
-			  scroll_up_aggressively,
-			  doc: /* Default value of `scroll-up-aggressively'.
-This value applies in buffers that don't have their own local values.
-This is the same as (default-value \\='scroll-up-aggressively).  */);
-
-  DEFVAR_BUFFER_DEFAULTS ("default-scroll-down-aggressively",
-			  scroll_down_aggressively,
-			  doc: /* Default value of `scroll-down-aggressively'.
-This value applies in buffers that don't have their own local values.
-This is the same as (default-value \\='scroll-down-aggressively).  */);
-
   DEFVAR_PER_BUFFER ("header-line-format",
 		     &BVAR (current_buffer, header_line_format),
 		     Qnil,
@@ -5482,9 +5360,6 @@ A string is printed verbatim in the mode line except for %-constructs:
   %% -- print %.   %- -- print infinitely many dashes.
 Decimal digits after the % specify field width to which to pad.  */);
 
-  DEFVAR_BUFFER_DEFAULTS ("default-major-mode", major_mode,
-			  doc: /* Value of `major-mode' for new buffers.  */);
-
   DEFVAR_PER_BUFFER ("major-mode", &BVAR (current_buffer, major_mode),
 		     Qsymbolp,
 		     doc: /* Symbol for current buffer's major mode.
@@ -5543,7 +5418,7 @@ file I/O and the behavior of various editing commands.
 This variable is buffer-local but you cannot set it directly;
 use the function `set-buffer-multibyte' to change a buffer's representation.
 See also Info node `(elisp)Text Representations'.  */);
-  XSYMBOL (intern_c_string ("enable-multibyte-characters"))->constant = 1;
+  make_symbol_constant (intern_c_string ("enable-multibyte-characters"));
 
   DEFVAR_PER_BUFFER ("buffer-file-coding-system",
 		     &BVAR (current_buffer, buffer_file_coding_system), Qnil,

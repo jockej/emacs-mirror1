@@ -49,6 +49,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <limits.h>
 
 #include <intprops.h>
+#include <stdlib.h>
 #include <strftime.h>
 #include <verify.h>
 
@@ -85,10 +86,6 @@ enum { tzeqlen = sizeof "TZ=" - 1 };
 static timezone_t local_tz;
 static timezone_t wall_clock_tz;
 static timezone_t const utc_tz = 0;
-
-/* A valid but unlikely setting for the TZ environment variable.
-   It is OK (though a bit slower) if the user chooses this value.  */
-static char dump_tz_string[] = "TZ=UtC0";
 
 /* The cached value of Vsystem_name.  This is used only to compare it
    to Vsystem_name, so it need not be visible to the GC.  */
@@ -229,6 +226,12 @@ tzlookup (Lisp_Object zone, bool settz)
 void
 init_editfns (bool dumping)
 {
+#if !defined CANNOT_DUMP && defined HAVE_TZSET
+  /* A valid but unlikely setting for the TZ environment variable.
+     It is OK (though a bit slower) if the user chooses this value.  */
+  static char dump_tz_string[] = "TZ=UtC0";
+#endif
+
   const char *user_name;
   register char *p;
   struct passwd *pw;	/* password entry for the current user */
@@ -1543,17 +1546,8 @@ static EMACS_INT
 hi_time (time_t t)
 {
   time_t hi = t >> LO_TIME_BITS;
-
-  /* Check for overflow, helping the compiler for common cases where
-     no runtime check is needed, and taking care not to convert
-     negative numbers to unsigned before comparing them.  */
-  if (! ((! TYPE_SIGNED (time_t)
-	  || MOST_NEGATIVE_FIXNUM <= TIME_T_MIN >> LO_TIME_BITS
-	  || MOST_NEGATIVE_FIXNUM <= hi)
-	 && (TIME_T_MAX >> LO_TIME_BITS <= MOST_POSITIVE_FIXNUM
-	     || hi <= MOST_POSITIVE_FIXNUM)))
+  if (FIXNUM_OVERFLOW_P (hi))
     time_overflow ();
-
   return hi;
 }
 
@@ -1615,7 +1609,7 @@ time_arith (Lisp_Object a, Lisp_Object b,
   struct lisp_time ta = lisp_time_struct (a, &alen);
   struct lisp_time tb = lisp_time_struct (b, &blen);
   struct lisp_time t = op (ta, tb);
-  if (! (MOST_NEGATIVE_FIXNUM <= t.hi && t.hi <= MOST_POSITIVE_FIXNUM))
+  if (FIXNUM_OVERFLOW_P (t.hi))
     time_overflow ();
   Lisp_Object val = Qnil;
 
@@ -1637,21 +1631,28 @@ time_arith (Lisp_Object a, Lisp_Object b,
 }
 
 DEFUN ("time-add", Ftime_add, Stime_add, 2, 2, 0,
-       doc: /* Return the sum of two time values A and B, as a time value.  */)
+       doc: /* Return the sum of two time values A and B, as a time value.
+A nil value for either argument stands for the current time.
+See `current-time-string' for the various forms of a time value.  */)
   (Lisp_Object a, Lisp_Object b)
 {
   return time_arith (a, b, time_add);
 }
 
 DEFUN ("time-subtract", Ftime_subtract, Stime_subtract, 2, 2, 0,
-       doc: /* Return the difference between two time values A and B, as a time value.  */)
+       doc: /* Return the difference between two time values A and B, as a time value.
+Use `float-time' to convert the difference into elapsed seconds.
+A nil value for either argument stands for the current time.
+See `current-time-string' for the various forms of a time value.  */)
   (Lisp_Object a, Lisp_Object b)
 {
   return time_arith (a, b, time_subtract);
 }
 
 DEFUN ("time-less-p", Ftime_less_p, Stime_less_p, 2, 2, 0,
-       doc: /* Return non-nil if time value T1 is earlier than time value T2.  */)
+       doc: /* Return non-nil if time value T1 is earlier than time value T2.
+A nil value for either argument stands for the current time.
+See `current-time-string' for the various forms of a time value.  */)
   (Lisp_Object t1, Lisp_Object t2)
 {
   int t1len, t2len;
@@ -1873,7 +1874,7 @@ decode_time_components (Lisp_Object high, Lisp_Object low, Lisp_Object usec,
 
   if (result)
     {
-      if (! (MOST_NEGATIVE_FIXNUM <= hi && hi <= MOST_POSITIVE_FIXNUM))
+      if (FIXNUM_OVERFLOW_P (hi))
 	return -1;
       result->hi = hi;
       result->lo = lo;
@@ -2029,10 +2030,11 @@ emacs_nmemftime (char *s, size_t maxsize, const char *format,
 }
 
 DEFUN ("format-time-string", Fformat_time_string, Sformat_time_string, 1, 3, 0,
-       doc: /* Use FORMAT-STRING to format the time TIME, or now if omitted.
+       doc: /* Use FORMAT-STRING to format the time TIME, or now if omitted or nil.
 TIME is specified as (HIGH LOW USEC PSEC), as returned by
-`current-time' or `file-attributes'.  The obsolete form (HIGH . LOW)
-is also still accepted.
+`current-time' or `file-attributes'.  It can also be a single integer
+number of seconds since the epoch.  The obsolete form (HIGH . LOW) is
+also still accepted.
 
 The optional ZONE is omitted or nil for Emacs local time, t for
 Universal Time, `wall' for system wall clock time, or a string as in
@@ -2058,6 +2060,7 @@ by text that describes the specified date and time in TIME:
 %H is the hour on a 24-hour clock, %I is on a 12-hour clock, %k is like %H
  only blank-padded, %l is like %I blank-padded.
 %p is the locale's equivalent of either AM or PM.
+%q is the calendar quarter (1–4).
 %M is the minute.
 %S is the second.
 %N is the nanosecond, %6N the microsecond, %3N the millisecond, etc.
@@ -2113,7 +2116,11 @@ format_time_string (char const *format, ptrdiff_t formatlen,
   USE_SAFE_ALLOCA;
 
   timezone_t tz = tzlookup (zone, false);
-  tmp = emacs_localtime_rz (tz, &t.tv_sec, tmp);
+  /* On some systems, like 32-bit MinGW, tv_sec of struct timespec is
+     a 64-bit type, but time_t is a 32-bit type.  emacs_localtime_rz
+     expects a pointer to time_t value.  */
+  time_t tsec = t.tv_sec;
+  tmp = emacs_localtime_rz (tz, &tsec, tmp);
   if (! tmp)
     {
       xtzfree (tz);
@@ -2151,7 +2158,8 @@ DEFUN ("decode-time", Fdecode_time, Sdecode_time, 0, 2, 0,
        doc: /* Decode a time value as (SEC MINUTE HOUR DAY MONTH YEAR DOW DST UTCOFF).
 The optional SPECIFIED-TIME should be a list of (HIGH LOW . IGNORED),
 as from `current-time' and `file-attributes', or nil to use the
-current time.  The obsolete form (HIGH . LOW) is also still accepted.
+current time.  It can also be a single integer number of seconds since
+the epoch.  The obsolete form (HIGH . LOW) is also still accepted.
 
 The optional ZONE is omitted or nil for Emacs local time, t for
 Universal Time, `wall' for system wall clock time, or a string as in
@@ -2277,8 +2285,9 @@ which provide a much more powerful and general facility.
 If SPECIFIED-TIME is given, it is a time to format instead of the
 current time.  The argument should have the form (HIGH LOW . IGNORED).
 Thus, you can use times obtained from `current-time' and from
-`file-attributes'.  SPECIFIED-TIME can also have the form (HIGH . LOW),
-but this is considered obsolete.
+`file-attributes'.  SPECIFIED-TIME can also be a single integer number
+of seconds since the epoch.  The obsolete form (HIGH . LOW) is also
+still accepted.
 
 The optional ZONE is omitted or nil for Emacs local time, t for
 Universal Time, `wall' for system wall clock time, or a string as in
@@ -2358,8 +2367,9 @@ NAME is a string giving the name of the time zone.
 If SPECIFIED-TIME is given, the time zone offset is determined from it
 instead of using the current time.  The argument should have the form
 \(HIGH LOW . IGNORED).  Thus, you can use times obtained from
-`current-time' and from `file-attributes'.  SPECIFIED-TIME can also
-have the form (HIGH . LOW), but this is considered obsolete.
+`current-time' and from `file-attributes'.  SPECIFIED-TIME can also be
+a single integer number of seconds since the epoch.  The obsolete form
+(HIGH . LOW) is also still accepted.
 
 The optional ZONE is omitted or nil for Emacs local time, t for
 Universal Time, `wall' for system wall clock time, or a string as in
@@ -2381,7 +2391,10 @@ the data it can't find.  */)
   zone_name = format_time_string ("%Z", sizeof "%Z" - 1, value,
 				  zone, &local_tm);
 
-  if (HAVE_TM_GMTOFF || gmtime_r (&value.tv_sec, &gmt_tm))
+  /* gmtime_r expects a pointer to time_t, but tv_sec of struct
+     timespec on some systems (MinGW) is a 64-bit field.  */
+  time_t tsec = value.tv_sec;
+  if (HAVE_TM_GMTOFF || gmtime_r (&tsec, &gmt_tm))
     {
       long int offset = (HAVE_TM_GMTOFF
 			 ? tm_gmtoff (&local_tm)
@@ -2964,6 +2977,10 @@ Return -N if first string is less after N-1 chars, +N if first string is
 greater after N-1 chars, or 0 if strings match.
 The first substring is in BUFFER1 from START1 to END1 and the second
 is in BUFFER2 from START2 to END2.
+All arguments may be nil.  If BUFFER1 or BUFFER2 is nil, the current
+buffer is used.  If START1 or START2 is nil, the value of `point-min'
+in the respective buffers is used.  If END1 or END2 is nil, the value
+of `point-max' in the respective buffers is used.
 The value of `case-fold-search' in the current buffer
 determines whether case is significant or ignored.  */)
   (Lisp_Object buffer1, Lisp_Object start1, Lisp_Object end1, Lisp_Object buffer2, Lisp_Object start2, Lisp_Object end2)

@@ -1034,10 +1034,6 @@ extern struct buffer *all_buffers;
 #define FOR_EACH_BUFFER(b) \
   for ((b) = all_buffers; (b); (b) = (b)->next)
 
-/* This points to the current buffer.  */
-
-extern struct buffer *current_buffer;
-
 /* This structure holds the default values of the buffer-local variables
    that have special slots in each buffer.
    The default value occupies the same slot in this structure
@@ -1177,7 +1173,7 @@ buffer_has_overlays (void)
 
 /* Return character code of multi-byte form at byte position POS.  If POS
    doesn't point the head of valid multi-byte form, only the byte at
-   POS is returned.  No range checking. */
+   POS is returned.  No range checking.  */
 
 INLINE int
 FETCH_MULTIBYTE_CHAR (ptrdiff_t pos)

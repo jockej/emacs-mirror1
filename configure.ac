@@ -23,7 +23,7 @@ dnl  along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.
 
 AC_PREREQ(2.65)
 dnl Note this is parsed by (at least) make-dist and lisp/cedet/ede/emacs.el.
-AC_INIT(GNU Emacs, 25.1.50, bug-gnu-emacs@gnu.org)
+AC_INIT(GNU Emacs, 26.0.50, bug-gnu-emacs@gnu.org)
 
 dnl Set emacs_config_options to the options of 'configure', quoted for the shell,
 dnl and then quoted again for a C string.  Separate options with spaces.
@@ -343,8 +343,8 @@ OPTION_DEFAULT_ON([toolkit-scroll-bars],[don't use Motif or Xaw3d scroll bars])
 OPTION_DEFAULT_ON([xaw3d],[don't use Xaw3d])
 OPTION_DEFAULT_ON([xim],[don't use X11 XIM])
 AC_ARG_WITH([ns],[AS_HELP_STRING([--with-ns],
-[use Nextstep (OS X Cocoa or GNUstep) windowing system.
-On by default on Mac OS X.])],[],[with_ns=maybe])
+[use Nextstep (macOS Cocoa or GNUstep) windowing system.
+On by default on macOS.])],[],[with_ns=maybe])
 OPTION_DEFAULT_OFF([w32], [use native MS Windows GUI in a Cygwin build])
 
 OPTION_DEFAULT_ON([gpm],[don't use -lgpm for mouse support on a GNU/Linux console])
@@ -355,6 +355,7 @@ OPTION_DEFAULT_ON([selinux],[don't compile with SELinux support])
 OPTION_DEFAULT_ON([gnutls],[don't use -lgnutls for SSL/TLS support])
 OPTION_DEFAULT_ON([zlib],[don't compile with zlib decompression support])
 OPTION_DEFAULT_OFF([modules],[compile with dynamic modules support])
+OPTION_DEFAULT_ON([threads],[don't compile with elisp threading support])
 
 AC_ARG_WITH([file-notification],[AS_HELP_STRING([--with-file-notification=LIB],
  [use a file notification library (LIB one of: yes, inotify, kqueue, gfile, w32, no)])],
@@ -608,7 +609,7 @@ case "${canonical}" in
     opsys=openbsd
   ;;
 
-  ## Apple Darwin / Mac OS X
+  ## Apple Darwin / macOS
   *-apple-darwin* )
     case "${canonical}" in
       *-apple-darwin[0-9].*) unported=yes ;;
@@ -1366,6 +1367,7 @@ case "$opsys" in
    UNEXEC_OBJ=unexsol.o
    ;;
 esac
+test "$CANNOT_DUMP" = "yes" && UNEXEC_OBJ=
 
 LD_SWITCH_SYSTEM=
 case "$opsys" in
@@ -1642,7 +1644,7 @@ AC_CHECK_HEADERS_ONCE(
   sys/sysinfo.h
   coff.h pty.h
   sys/resource.h
-  sys/utsname.h pwd.h utmp.h util.h)
+  sys/utsname.h pwd.h utmp.h util.h sys/prctl.h)
 
 AC_CACHE_CHECK([for ADDR_NO_RANDOMIZE],
   [emacs_cv_personality_addr_no_randomize],
@@ -1895,14 +1897,14 @@ Either fix this, or re-configure with the option '--without-ns'.])])
 
   macfont_file=""
   if test "${NS_IMPL_COCOA}" = "yes"; then
-    AC_MSG_CHECKING([for OSX 10.6 or newer])
+    AC_MSG_CHECKING([for Mac OS X 10.6 or newer])
     AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <AppKit/AppKit.h>],
                                      [
 #ifdef MAC_OS_X_VERSION_MAX_ALLOWED
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= 1060
  ; /* OK */
 #else
- error "OSX 10.6 or newer required";
+ error "Mac OS X 10.6 or newer required";
 #endif
 #endif
 		    ])],
@@ -1911,7 +1913,7 @@ Either fix this, or re-configure with the option '--without-ns'.])])
     AC_MSG_RESULT([$ns_osx_have_106])
 
     if test $ns_osx_have_106 = no; then
-       AC_MSG_ERROR([OSX 10.6 or newer is required]);
+       AC_MSG_ERROR([Mac OS X 10.6 or newer is required]);
     fi
   fi
 fi
@@ -2151,14 +2153,16 @@ AC_CACHE_CHECK(
    fi])
 doug_lea_malloc=$emacs_cv_var_doug_lea_malloc
 
-system_malloc=$emacs_cv_sanitize_address
-
 hybrid_malloc=
+system_malloc=yes
 
+test "$CANNOT_DUMP" = yes ||
 case "$opsys" in
   ## darwin ld insists on the use of malloc routines in the System framework.
-  darwin | mingw32 | nacl | sol2-10) system_malloc=yes ;;
-  cygwin) hybrid_malloc=yes;;
+  darwin | mingw32 | nacl | sol2-10) ;;
+  cygwin) hybrid_malloc=yes
+          system_malloc= ;;
+  *) test "$ac_cv_func_sbrk" = yes && system_malloc=$emacs_cv_sanitize_address;;
 esac
 
 if test "${system_malloc}" != yes && test "${doug_lea_malloc}" != yes \
@@ -2231,7 +2235,7 @@ fi
 
 use_mmap_for_buffers=no
 case "$opsys" in
-  cygwin|mingw32) use_mmap_for_buffers=yes ;;
+  mingw32) use_mmap_for_buffers=yes ;;
 esac
 
 AC_FUNC_MMAP
@@ -2301,6 +2305,22 @@ if test "$ac_cv_header_pthread_h" && test "$opsys" != "mingw32"; then
   fi
 fi
 AC_SUBST([LIB_PTHREAD])
+
+AC_MSG_CHECKING([for thread support])
+threads_enabled=no
+if test "$with_threads" = yes; then
+   if test "$emacs_cv_pthread_lib" != no; then
+      AC_DEFINE(THREADS_ENABLED, 1,
+                [Define to 1 if you want elisp thread support.])
+      threads_enabled=yes
+   elif test "${opsys}" = "mingw32"; then
+      dnl MinGW can do native Windows threads even without pthreads
+      AC_DEFINE(THREADS_ENABLED, 1,
+                [Define to 1 if you want elisp thread support.])
+      threads_enabled=yes
+   fi
+fi
+AC_MSG_RESULT([$threads_enabled])
 
 dnl Check for need for bigtoc support on IBM AIX
 
@@ -2630,8 +2650,8 @@ if test "$with_xwidgets" != "no"; then
   test "$USE_GTK_TOOLKIT" = "GTK3" && test "$window_system" != "none" ||
     AC_MSG_ERROR([xwidgets requested but gtk3 not used.])
 
-  WEBKIT_REQUIRED=1.4.0
-  WEBKIT_MODULES="webkitgtk-3.0 >= $WEBKIT_REQUIRED"
+  WEBKIT_REQUIRED=2.12
+  WEBKIT_MODULES="webkit2gtk-4.0 >= $WEBKIT_REQUIRED"
   EMACS_CHECK_MODULES([WEBKIT], [$WEBKIT_MODULES])
   HAVE_XWIDGETS=$HAVE_WEBKIT
   test $HAVE_XWIDGETS = yes ||
@@ -3614,9 +3634,9 @@ AC_CHECK_HEADERS_ONCE(malloc/malloc.h)
 GNUSTEP_CFLAGS=
 ### Use NeXTstep API to implement GUI.
 if test "${HAVE_NS}" = "yes"; then
-  AC_DEFINE(HAVE_NS, 1, [Define to 1 if you are using the NeXTstep API, either GNUstep or Cocoa on Mac OS X.])
+  AC_DEFINE(HAVE_NS, 1, [Define to 1 if you are using the NeXTstep API, either GNUstep or Cocoa on macOS.])
   if test "${NS_IMPL_COCOA}" = "yes"; then
-    AC_DEFINE(NS_IMPL_COCOA, 1, [Define to 1 if you are using NS windowing under MacOS X.])
+    AC_DEFINE(NS_IMPL_COCOA, 1, [Define to 1 if you are using NS windowing under macOS.])
   fi
   if test "${NS_IMPL_GNUSTEP}" = "yes"; then
     AC_DEFINE(NS_IMPL_GNUSTEP, 1, [Define to 1 if you are using NS windowing under GNUstep.])
@@ -3711,6 +3731,24 @@ if test "${HAVE_X11}" = "yes"; then
 fi
 AC_SUBST(XFIXES_CFLAGS)
 AC_SUBST(XFIXES_LIBS)
+
+### Use Xdbe (-lXdbe) if available
+HAVE_XDBE=no
+if test "${HAVE_X11}" = "yes"; then
+  AC_CHECK_HEADER(X11/extensions/Xdbe.h,
+    [AC_CHECK_LIB(Xext, XdbeAllocateBackBufferName, HAVE_XDBE=yes)],
+    [],
+    [#include <X11/Xlib.h>
+    ])
+  if test $HAVE_XDBE = yes; then
+    XDBE_LIBS=-lXext
+  fi
+  if test $HAVE_XDBE = yes; then
+    AC_DEFINE(HAVE_XDBE, 1, [Define to 1 if you have the Xdbe extension.])
+  fi
+fi
+AC_SUBST(XDBE_CFLAGS)
+AC_SUBST(XDBE_LIBS)
 
 ### Use libxml (-lxml2) if available
 ### mingw32 doesn't use -lxml2, since it loads the library dynamically.
@@ -3850,7 +3888,7 @@ pthread_sigmask strsignal setitimer \
 sendto recvfrom getsockname getifaddrs freeifaddrs \
 gai_strerror sync \
 getpwent endpwent getgrent endgrent \
-cfmakeraw cfsetspeed copysign __executable_start log2)
+cfmakeraw cfsetspeed copysign __executable_start log2 prctl)
 LIBS=$OLD_LIBS
 
 dnl No need to check for posix_memalign if aligned_alloc works.
@@ -4137,7 +4175,7 @@ AC_CHECK_HEADERS(valgrind/valgrind.h)
 
 AC_CHECK_MEMBERS([struct unipair.unicode], [], [], [[#include <linux/kd.h>]])
 
-AC_CHECK_FUNCS_ONCE(tzset)
+AC_CHECK_FUNCS_ONCE([sbrk tzset])
 
 ok_so_far=yes
 AC_CHECK_FUNC(socket, , ok_so_far=no)
@@ -4713,9 +4751,9 @@ case $opsys in
     ;;
 
   darwin)
-    dnl Not __APPLE__, as this may not be defined on non-OSX Darwin.
+    dnl Not __APPLE__, as this may not be defined on non-macOS Darwin.
     dnl Not DARWIN, because Panther and lower CoreFoundation.h use DARWIN to
-    dnl distinguish OS X from pure Darwin.
+    dnl distinguish macOS from pure Darwin.
     AC_DEFINE(DARWIN_OS, [], [Define if the system is Darwin.])
     ;;
 
@@ -4882,14 +4920,6 @@ AC_DEFINE_UNQUOTED(EMACS_CONFIGURATION,  "${canonical}",
 		   [Define to the canonical Emacs configuration name.])
 AC_DEFINE_UNQUOTED(EMACS_CONFIG_OPTIONS, "${emacs_config_options}",
 		   [Define to the options passed to configure.])
-AH_TEMPLATE(config_opsysfile, [Some platforms that do not use configure
-  define this to include extra configuration information.])
-
-case $opsys in
-  mingw32)
-    AC_DEFINE(config_opsysfile, <ms-w32.h>, [])
-    ;;
-esac
 
 XMENU_OBJ=
 XOBJ=
@@ -5131,25 +5161,29 @@ case "$opsys" in
   *) LD_SWITCH_SYSTEM_TEMACS= ;;
 esac
 
-# -nopie fixes a temacs segfault on Gentoo, OpenBSD, and other systems
-# with "hardened" GCC configurations for some reason (Bug#18784).
-# We don't know why -nopie works, but not segfaulting is better than
-# segfaulting.  Use ac_c_werror_flag=yes when trying -nopie, otherwise
-# clang keeps warning that it does not understand -nopie, and pre-4.6
-# GCC has a similar problem (Bug#20338).
-AC_CACHE_CHECK([whether $CC accepts -nopie],
-  [emacs_cv_prog_cc_nopie],
+# -no-pie or -nopie fixes a temacs segfault on Gentoo, OpenBSD,
+# Ubuntu, and other systems with "hardened" GCC configurations for
+# some reason (Bug#18784).  We don't know why this works, but not
+# segfaulting is better than segfaulting.  Use ac_c_werror_flag=yes
+# when trying the option, otherwise clang keeps warning that it does
+# not understand it, and pre-4.6 GCC has a similar problem
+# (Bug#20338).  Prefer -no-pie to -nopie, as -no-pie is the
+# spelling used by GCC 6.1.0 and later (Bug#24682).
+AC_CACHE_CHECK(
+  [for $CC option to disable position independent executables],
+  [emacs_cv_prog_cc_no_pie],
   [emacs_save_c_werror_flag=$ac_c_werror_flag
    emacs_save_LDFLAGS=$LDFLAGS
    ac_c_werror_flag=yes
-   LDFLAGS="$LDFLAGS -nopie"
-   AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])],
-     [emacs_cv_prog_cc_nopie=yes],
-     [emacs_cv_prog_cc_nopie=no])
+   for emacs_cv_prog_cc_no_pie in -no-pie -nopie no; do
+     test $emacs_cv_prog_cc_no_pie = no && break
+     LDFLAGS="$emacs_save_LDFLAGS $emacs_cv_prog_cc_no_pie"
+     AC_LINK_IFELSE([AC_LANG_PROGRAM([], [])], [break])
+   done
    ac_c_werror_flag=$emacs_save_c_werror_flag
    LDFLAGS=$emacs_save_LDFLAGS])
-if test "$emacs_cv_prog_cc_nopie" = yes; then
-  LD_SWITCH_SYSTEM_TEMACS="$LD_SWITCH_SYSTEM_TEMACS -nopie"
+if test "$emacs_cv_prog_cc_no_pie" != no; then
+  LD_SWITCH_SYSTEM_TEMACS="$LD_SWITCH_SYSTEM_TEMACS $emacs_cv_prog_cc_no_pie"
 fi
 
 if test x$ac_enable_profiling != x ; then
@@ -5297,6 +5331,7 @@ AS_ECHO(["  Does Emacs use -lXaw3d?                                 ${HAVE_XAW3D
   Does Emacs have dynamic modules support?                ${HAVE_MODULES}
   Does Emacs use toolkit scroll bars?                     ${USE_TOOLKIT_SCROLL_BARS}
   Does Emacs support Xwidgets (requires gtk3)?            ${HAVE_XWIDGETS}
+  Does Emacs have threading support in lisp?              ${threads_enabled}
 "])
 
 if test -n "${EMACSDATA}"; then

@@ -171,13 +171,19 @@ typedef unsigned long reg_syntax_t;
    some interfaces).  When a regexp is compiled, the syntax used is
    stored in the pattern buffer, so changing this does not affect
    already-compiled regexps.  */
-extern reg_syntax_t re_syntax_options;
+/* extern reg_syntax_t re_syntax_options; */
 
 #ifdef emacs
 # include "lisp.h"
-/* In Emacs, this is the string or buffer in which we
-   are matching.  It is used for looking up syntax properties.  */
-extern Lisp_Object re_match_object;
+/* In Emacs, this is the string or buffer in which we are matching.
+   It is used for looking up syntax properties.
+
+   If the value is a Lisp string object, we are matching text in that
+   string; if it's nil, we are matching text in the current buffer; if
+   it's t, we are matching text in a C string.
+
+   This is defined as a macro in thread.h, which see.  */
+/* extern Lisp_Object re_match_object; */
 #endif
 
 /* Roughly the maximum number of failure points on the stack.  */

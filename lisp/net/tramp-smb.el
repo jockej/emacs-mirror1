@@ -49,7 +49,9 @@
       ;; This is just a guess.  We don't know whether the share "C$"
       ;; is available for public use, and whether the user has write
       ;; access.
-      (tramp-tmpdir "/C$/Temp"))))
+      (tramp-tmpdir "/C$/Temp")
+      ;; Another guess.  We might implement a better check later on.
+      (tramp-case-insensitive t))))
 
 ;; Add a default for `tramp-default-method-alist'. Rule: If there is
 ;; a domain in USER, it must be the SMB method.
@@ -243,6 +245,7 @@ See `tramp-actions-before-shell' for more info.")
     (file-modes . tramp-handle-file-modes)
     (file-name-all-completions . tramp-smb-handle-file-name-all-completions)
     (file-name-as-directory . tramp-handle-file-name-as-directory)
+    (file-name-case-insensitive-p . tramp-handle-file-name-case-insensitive-p)
     (file-name-completion . tramp-handle-file-name-completion)
     (file-name-directory . tramp-handle-file-name-directory)
     (file-name-nondirectory . tramp-handle-file-name-nondirectory)
@@ -475,15 +478,19 @@ pass to the OPERATION."
 		    (if t1
 			;; Source is remote.
 			(append args
-				(list "-D" (shell-quote-argument localname)
+				(list "-D" (tramp-unquote-shell-quote-argument
+					    localname)
 				      "-c" (shell-quote-argument "tar qc - *")
 				      "|" "tar" "xfC" "-"
-				      (shell-quote-argument tmpdir)))
+				      (tramp-unquote-shell-quote-argument
+				       tmpdir)))
 		      ;; Target is remote.
 		      (append (list "tar" "cfC" "-"
-				    (shell-quote-argument dirname) "." "|")
+				    (tramp-unquote-shell-quote-argument dirname)
+				    "." "|")
 			      args
-			      (list "-D" (shell-quote-argument localname)
+			      (list "-D" (tramp-unquote-shell-quote-argument
+					  localname)
 				    "-c" (shell-quote-argument "tar qx -")))))
 
 	      (unwind-protect
@@ -501,7 +508,8 @@ pass to the OPERATION."
 		      ;; target.
 		      (make-directory
 		       (expand-file-name
-			".." (concat tmpdir localname)) 'parents)
+			".." (concat tmpdir localname))
+		       'parents)
 		      (make-symbolic-link
 		       newname (directory-file-name (concat tmpdir localname))))
 
@@ -596,7 +604,8 @@ PRESERVE-UID-GID and PRESERVE-EXTENDED-ATTRIBUTES are completely ignored."
 	       v 'file-error "Target `%s' must contain a share name" newname))
 	    (unless (tramp-smb-send-command
 		     v (format "put \"%s\" \"%s\""
-			       filename (tramp-smb-get-localname v)))
+			       (tramp-compat-file-name-unquote filename)
+			       (tramp-smb-get-localname v)))
 	      (tramp-error
 	       v 'file-error "Cannot copy `%s' to `%s'" filename newname))))))
 
@@ -756,7 +765,8 @@ PRESERVE-UID-GID and PRESERVE-EXTENDED-ATTRIBUTES are completely ignored."
 	    (setq args (append args (list "-s" tramp-smb-conf))))
 	  (setq
 	   args
-	   (append args (list (shell-quote-argument localname) "2>/dev/null")))
+	   (append args (list (tramp-unquote-shell-quote-argument localname)
+			      "2>/dev/null")))
 
 	  (unwind-protect
 	      (with-temp-buffer
@@ -902,7 +912,7 @@ PRESERVE-UID-GID and PRESERVE-EXTENDED-ATTRIBUTES are completely ignored."
   (with-parsed-tramp-file-name filename nil
     (unless (file-exists-p filename)
       (tramp-error
-       v 'file-error
+       v tramp-file-missing
        "Cannot make local copy of non-existing file `%s'" filename))
     (let ((tmpfile (tramp-compat-make-temp-file filename)))
       (with-tramp-progress-reporter
@@ -1125,7 +1135,7 @@ target of the symlink differ."
 		   "File %s already exists; make it a new name anyway? "
 		   linkname)))
 	(tramp-error
-	 v2 'file-error
+	 v2 'file-already-exists
 	 "make-symbolic-link: file %s already exists" linkname))
       (unless (tramp-smb-get-cifs-capabilities v1)
 	(tramp-error v2 'file-error "make-symbolic-link not supported"))
@@ -1350,7 +1360,7 @@ target of the symlink differ."
 	    (setq args (append args (list "-s" tramp-smb-conf))))
 	  (setq
 	   args
-	   (append args (list (shell-quote-argument localname)
+	   (append args (list (tramp-unquote-shell-quote-argument localname)
 			      "&&" "echo" "tramp_exit_status" "0"
 			      "||" "echo" "tramp_exit_status" "1")))
 
@@ -1454,15 +1464,18 @@ target of the symlink differ."
   "Like `handle-substitute-in-file-name' for Tramp files.
 \"//\" substitutes only in the local filename part.  Catches
 errors for shares like \"C$/\", which are common in Microsoft Windows."
-  (with-parsed-tramp-file-name filename nil
-    ;; Ignore in LOCALNAME everything before "//".
-    (when (and (stringp localname) (string-match ".+?/\\(/\\|~\\)" localname))
-      (setq filename
-	    (concat (file-remote-p filename)
-		    (replace-match "\\1" nil nil localname)))))
-  (condition-case nil
-      (tramp-run-real-handler 'substitute-in-file-name (list filename))
-    (error filename)))
+  ;; Check, whether the local part is a quoted file name.
+  (if (tramp-compat-file-name-quoted-p filename)
+      filename
+    (with-parsed-tramp-file-name filename nil
+      ;; Ignore in LOCALNAME everything before "//".
+      (when (and (stringp localname) (string-match ".+?/\\(/\\|~\\)" localname))
+	(setq filename
+	      (concat (file-remote-p filename)
+		      (replace-match "\\1" nil nil localname)))))
+    (condition-case nil
+	(tramp-run-real-handler 'substitute-in-file-name (list filename))
+      (error filename))))
 
 (defun tramp-smb-handle-write-region
   (start end filename &optional append visit lockname confirm)
@@ -1512,7 +1525,8 @@ errors for shares like \"C$/\", which are common in Microsoft Windows."
 (defun tramp-smb-get-share (vec)
   "Returns the share name of LOCALNAME."
   (save-match-data
-    (let ((localname (tramp-file-name-localname vec)))
+    (let ((localname
+	   (tramp-compat-file-name-unquote (tramp-file-name-localname vec))))
       (when (string-match "^/?\\([^/]+\\)/" localname)
 	(match-string 1 localname)))))
 
@@ -1520,7 +1534,8 @@ errors for shares like \"C$/\", which are common in Microsoft Windows."
   "Returns the file name of LOCALNAME.
 If VEC has no cifs capabilities, exchange \"/\" by \"\\\\\"."
   (save-match-data
-    (let ((localname (tramp-file-name-localname vec)))
+    (let ((localname
+	   (tramp-compat-file-name-unquote (tramp-file-name-localname vec))))
       (setq
        localname
        (if (string-match "^/?[^/]+\\(/.*\\)" localname)
@@ -1720,7 +1735,7 @@ Result is the list (LOCALNAME MODE SIZE MTIME)."
 	    (if (and sec min hour day month year)
 		(encode-time
 		 sec min hour day
-		 (cdr (assoc (downcase month) tramp-parse-time-months))
+		 (cdr (assoc (downcase month) parse-time-months))
 		 year)
 	      '(0 0)))
       (list localname mode size mtime))))
@@ -1916,6 +1931,9 @@ If ARGUMENT is non-nil, use it as argument for
 		    (tramp-set-connection-property p "smb-share" share)
 		    (tramp-set-connection-property p "chunksize" 1)
 
+		    ;; Set connection-local variables.
+		    (tramp-set-connection-local-variables vec)
+
 		    ;; Mark it as connected.
 		    (tramp-set-connection-property p "connected" t))
 
@@ -2031,7 +2049,7 @@ Returns nil if an error message has appeared."
 (defun tramp-smb-shell-quote-argument (s)
   "Similar to `shell-quote-argument', but uses windows cmd syntax."
   (let ((system-type 'ms-dos))
-    (shell-quote-argument s)))
+    (tramp-unquote-shell-quote-argument s)))
 
 (add-hook 'tramp-unload-hook
 	  (lambda ()
@@ -2042,8 +2060,10 @@ Returns nil if an error message has appeared."
 ;;; TODO:
 
 ;; * Return more comprehensive file permission string.
+;;
 ;; * Try to remove the inclusion of dummy "" directory.  Seems to be at
 ;;   several places, especially in `tramp-smb-handle-insert-directory'.
+;;
 ;; * Ignore case in file names.
 
 ;;; tramp-smb.el ends here

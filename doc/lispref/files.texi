@@ -1140,12 +1140,46 @@ appropriate manner.  If @var{file1} or @var{file2} does not exist, the
 return value is unspecified.
 @end defun
 
+@defun file-name-case-insensitive-p filename
+Sometimes file names or their parts need to be compared as strings, in
+which case it's important to know whether the underlying filesystem is
+case-insensitive.  This function returns @code{t} if file
+@var{filename} is on a case-insensitive filesystem.  It always returns
+@code{t} on MS-DOS and MS-Windows.  On Cygwin and Mac OS X,
+filesystems may or may not be case-insensitive, and the function tries
+to determine case-sensitivity by a runtime test.  If the test is
+inconclusive, the function returns @code{t} on Cygwin and @code{nil}
+on Mac OS X.
+
+Currently this function always returns @code{nil} on platforms other
+than MS-DOS, MS-Windows, Cygwin, and Mac OS X.  It does not detect
+case-insensitivity of mounted filesystems, such as Samba shares or
+NFS-mounted Windows volumes.  On remote hosts, it assumes @code{t} for
+the @samp{smb} method.  For all other connection methods, runtime
+tests are performed.
+@end defun
+
 @defun file-in-directory-p file dir
 This function returns @code{t} if @var{file} is a file in directory
 @var{dir}, or in a subdirectory of @var{dir}.  It also returns
 @code{t} if @var{file} and @var{dir} are the same directory.  It
 compares the truenames of the two directories.  If @var{dir} does not
 name an existing directory, the return value is @code{nil}.
+@end defun
+
+@defun vc-responsible-backend file
+This function determines the responsible VC backend of the given
+@var{file}.  For example, if @file{emacs.c} is a file tracked by Git,
+@w{@code{(vc-responsible-backend "emacs.c")}} returns @samp{Git}.
+Note that if @var{file} is a symbolic link,
+@code{vc-responsible-backend} will not resolve it---the backend of the
+symbolic link file itself is reported.  To get the backend VC of the
+file to which @var{file} refers, wrap @var{file} with a symbolic link
+resolving function such as @code{file-chase-links}:
+
+@smallexample
+(vc-responsible-backend (file-chase-links "emacs.c"))
+@end smallexample
 @end defun
 
 @node File Attributes
@@ -1501,10 +1535,11 @@ in @code{exec-path}, and tries all the file-name extensions in
 @cindex setting modes of files
 
   The functions in this section rename, copy, delete, link, and set
-the modes (permissions) of files.  They all signal a @code{file-error}
-error if they fail to perform their function, reporting the
-system-dependent error message that describes the reason for the
-failure.
+the modes (permissions) of files.  Typically, they signal a
+@code{file-error} error if they fail to perform their function,
+reporting the system-dependent error message that describes the reason
+for the failure.  If they fail because a file is missing, they signal
+a @code{file-missing} error instead.
 
   For performance, the operating system may cache or alias changes
 made by these functions instead of writing them immediately to
@@ -2182,6 +2217,7 @@ function:
 
 @cindex file name abbreviations
 @cindex abbreviated file names
+@vindex directory-abbrev-alist
 @defun abbreviate-file-name filename
 @anchor{abbreviate-file-name}
 This function returns an abbreviated form of @var{filename}.  It
@@ -2366,6 +2402,47 @@ through the immediately preceding @samp{/}).
 
 @end defun
 
+  Sometimes, it is not desired to expand file names.  In such cases,
+the file name can be quoted to suppress the expansion, and to handle
+the file name literally.  Quoting happens by prefixing the file name
+with @samp{/:}.
+
+@defmac file-name-quote name
+This macro adds the quotation prefix @samp{/:} to the file @var{name}.
+For a local file @var{name}, it prefixes @var{name} with @samp{/:}.
+If @var{name} is a remote file name, the local part of @var{name} is
+quoted.  If @var{name} is already a quoted file name, @var{name} is
+returned unchanged.
+
+@example
+@group
+(substitute-in-file-name (file-name-quote "bar/~/foo"))
+     @result{} "/:bar/~/foo"
+@end group
+
+@group
+(substitute-in-file-name (file-name-quote "/ssh:host:bar/~/foo"))
+     @result{} "/ssh:host:/:bar/~/foo"
+@end group
+@end example
+
+The macro cannot be used to suppress file name handlers from magic
+file names (@pxref{Magic File Names}).
+@end defmac
+
+@defmac file-name-unquote name
+This macro removes the quotation prefix @samp{/:} from the file
+@var{name}, if any. If @var{name} is a remote file name, the local
+part of @var{name} is unquoted.
+@end defmac
+
+@defmac file-name-quoted-p name
+This macro returns non-@code{nil}, when @var{name} is quoted with the
+prefix @samp{/:}.  If @var{name} is a remote file name, the local part
+of @var{name} is checked.
+@end defmac
+
+
 @node Unique File Names
 @subsection Generating Unique File Names
 @cindex unique file names
@@ -2511,14 +2588,7 @@ that remote host.  If such a directory does not exist, or
 @end defun
 
 In order to extract the local part of the path name from a temporary
-file, the following code could be used:
-
-@example
-@group
-(let ((tmpfile (make-nearby-temp-file "foo")))
-  (or (file-remote-p tmpfile 'localname) tmpfile))
-@end group
-@end example
+file, @code{file-local-name} could be used.
 
 @node File Name Completion
 @subsection File Name Completion
@@ -2855,6 +2925,9 @@ This command deletes the directory named @var{dirname}.  The function
 must use @code{delete-directory} for them.  If @var{recursive} is
 @code{nil}, and the directory contains any files,
 @code{delete-directory} signals an error.
+If recursive is non-@code{nil}, there is no error merely because the
+directory or its files are deleted by some other process before
+@code{delete-directory} gets to them.
 
 @code{delete-directory} only follows symbolic links at the level of
 parent directories.
@@ -2964,6 +3037,7 @@ first, before handlers for jobs such as remote file access.
 @code{file-local-copy},
 @code{file-modes}, @code{file-name-all-completions},
 @code{file-name-as-directory},
+@code{file-name-case-insensitive-p},
 @code{file-name-completion},
 @code{file-name-directory},
 @code{file-name-nondirectory},
@@ -2974,8 +3048,7 @@ first, before handlers for jobs such as remote file access.
 @code{file-readable-p}, @code{file-regular-p},
 @code{file-remote-p}, @code{file-selinux-context},
 @code{file-symlink-p}, @code{file-truename}, @code{file-writable-p},
-@code{find-backup-file-name},
-@c Not sure why it was here:   @code{find-file-noselect},@*
+@code{find-backup-file-name},@*
 @code{get-file-buffer},
 @code{insert-directory},
 @code{insert-file-contents},@*
@@ -3020,6 +3093,7 @@ first, before handlers for jobs such as remote file access.
 @code{file-local-copy},
 @code{file-modes}, @code{file-name-all-completions},
 @code{file-name-as-directory},
+@code{file-name-case-insensitive-p},
 @code{file-name-completion},
 @code{file-name-directory},
 @code{file-name-nondirec@discretionary{}{}{}tory},
@@ -3031,7 +3105,6 @@ first, before handlers for jobs such as remote file access.
 @code{file-remote-p}, @code{file-selinux-context},
 @code{file-symlink-p}, @code{file-truename}, @code{file-writable-p},
 @code{find-backup-file-name},
-@c Not sure why it was here:   @code{find-file-noselect},
 @code{get-file-buffer},
 @code{insert-directory},
 @code{insert-file-contents},
@@ -3193,6 +3266,13 @@ name handler should indicate that by returning @code{nil}.
 This is useful for running a subprocess; every subprocess must have a
 non-magic directory to serve as its current directory, and this function
 is a good way to come up with one.
+@end defun
+
+@defun file-local-name filename
+This function returns the local part of file @var{filename}.  For a
+remote @var{filename}, it returns a file name which could be used
+directly as argument of a remote process.  If @var{filename} is local,
+this function returns the file name.
 @end defun
 
 @defopt remote-file-name-inhibit-cache

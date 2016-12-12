@@ -683,7 +683,7 @@ It also can't undo some Viper settings."
    (delq 'viper-mode-string global-mode-string))
 
   (setq-default major-mode
-                (viper-standard-value 'default-major-mode
+                (viper-standard-value 'major-mode
                                       viper-saved-non-viper-variables))
 
   (if (featurep 'emacs)
@@ -1234,7 +1234,7 @@ These two lines must come in the order given."))
 (if (null viper-saved-non-viper-variables)
     (setq viper-saved-non-viper-variables
 	  (list
-	   (cons 'default-major-mode (list (default-value 'major-mode)))
+	   (cons 'major-mode (list (default-value 'major-mode)))
 	   (cons 'next-line-add-newlines (list next-line-add-newlines))
 	   (cons 'require-final-newline (list require-final-newline))
 	   (cons 'scroll-step (list scroll-step))

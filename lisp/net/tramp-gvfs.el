@@ -114,7 +114,7 @@
   '("afp" "dav" "davs" "gdrive" "obex" "sftp" "synce")
   "List of methods for remote files, accessed with GVFS."
   :group 'tramp
-  :version "25.2"
+  :version "26.1"
   :type '(repeat (choice (const "afp")
 			 (const "dav")
 			 (const "davs")
@@ -480,6 +480,7 @@ Every entry is a list (NAME ADDRESS).")
     (file-modes . tramp-handle-file-modes)
     (file-name-all-completions . tramp-gvfs-handle-file-name-all-completions)
     (file-name-as-directory . tramp-handle-file-name-as-directory)
+    (file-name-case-insensitive-p . tramp-handle-file-name-case-insensitive-p)
     (file-name-completion . tramp-handle-file-name-completion)
     (file-name-directory . tramp-handle-file-name-directory)
     (file-name-nondirectory . tramp-handle-file-name-nondirectory)
@@ -541,7 +542,7 @@ Operations not mentioned here will be handled by the default Emacs primitives.")
 First arg specifies the OPERATION, second arg is a list of arguments to
 pass to the OPERATION."
   (unless tramp-gvfs-enabled
-    (tramp-user-error nil "Package `tramp-gvfs' not supported"))
+    (tramp-compat-user-error nil "Package `tramp-gvfs' not supported"))
   (let ((fn (assoc operation tramp-gvfs-file-name-handler-alist)))
     (if fn
 	(save-match-data (apply (cdr fn) args))
@@ -1033,7 +1034,7 @@ file names."
     (let ((tmpfile (tramp-compat-make-temp-file filename)))
       (unless (file-exists-p filename)
 	(tramp-error
-	 v 'file-error
+	 v tramp-file-missing
 	 "Cannot make local copy of non-existing file `%s'" filename))
       (copy-file filename tmpfile 'ok-if-already-exists 'keep-time)
       tmpfile)))
@@ -1231,6 +1232,7 @@ file-notify events."
 (defun tramp-gvfs-url-file-name (filename)
   "Return FILENAME in URL syntax."
   ;; "/" must NOT be hexlified.
+  (setq filename (tramp-compat-file-name-unquote filename))
   (let ((url-unreserved-chars (cons ?/ url-unreserved-chars))
 	result)
     (setq
@@ -1723,6 +1725,9 @@ connection if a previous connection has died for some reason."
 	       (tramp-get-file-property vec "/" "fuse-mountpoint" "") "/")
 	  (tramp-error vec 'file-error "FUSE mount denied"))
 
+	;; Set connection-local variables.
+	(tramp-set-connection-local-variables vec)
+
 	;; Mark it as connected.
 	(tramp-set-connection-property
 	 (tramp-get-connection-process vec) "connected" t))))
@@ -1963,10 +1968,13 @@ They are retrieved from the hal daemon."
 
 ;; * Host name completion for existing mount points (afp-server,
 ;;   smb-server) or via smb-network.
+;;
 ;; * Check, how two shares of the same SMB server can be mounted in
 ;;   parallel.
+;;
 ;; * Apply SDP on bluetooth devices, in order to filter out obex
 ;;   capability.
+;;
 ;; * Implement obex for other serial communication but bluetooth.
 
 ;;; tramp-gvfs.el ends here

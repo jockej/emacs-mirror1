@@ -50,6 +50,7 @@
 #include <config.h>
 
 #include <stddef.h>
+#include <stdlib.h>
 
 #ifdef emacs
 /* We need this for `regex.h', and perhaps for the Emacs include files.  */
@@ -152,6 +153,8 @@
 
 /* Converts the pointer to the char to BEG-based offset from the start.  */
 # define PTR_TO_OFFSET(d) POS_AS_IN_BUFFER (POINTER_TO_OFFSET (d))
+/* Strings are 0-indexed, buffers are 1-indexed; we pun on the boolean
+   result to get the right base index.  */
 # define POS_AS_IN_BUFFER(p) ((p) + (NILP (re_match_object) || BUFFERP (re_match_object)))
 
 # define RE_MULTIBYTE_P(bufp) ((bufp)->multibyte)
@@ -443,25 +446,12 @@ init_syntax_once (void)
 
 #else /* not REGEX_MALLOC  */
 
-/* Emacs already defines alloca, sometimes.  */
-# ifndef alloca
-
-/* Make alloca work the best possible way.  */
-#  ifdef __GNUC__
-#   define alloca __builtin_alloca
-#  else /* not __GNUC__ */
-#   ifdef HAVE_ALLOCA_H
-#    include <alloca.h>
-#   endif /* HAVE_ALLOCA_H */
-#  endif /* not __GNUC__ */
-
-# endif /* not alloca */
-
 # ifdef emacs
 #  define REGEX_USE_SAFE_ALLOCA USE_SAFE_ALLOCA
 #  define REGEX_SAFE_FREE() SAFE_FREE ()
 #  define REGEX_ALLOCATE SAFE_ALLOCA
 # else
+#  include <alloca.h>
 #  define REGEX_ALLOCATE alloca
 # endif
 
@@ -1654,28 +1644,6 @@ static int analyze_first (re_char *p, re_char *pend,
    reset the pointers that pointed into the old block to point to the
    correct places in the new one.  If extending the buffer results in it
    being larger than MAX_BUF_SIZE, then flag memory exhausted.  */
-#if __BOUNDED_POINTERS__
-# define SET_HIGH_BOUND(P) (__ptrhigh (P) = __ptrlow (P) + bufp->allocated)
-# define MOVE_BUFFER_POINTER(P)					\
-  (__ptrlow (P) = new_buffer + (__ptrlow (P) - old_buffer),	\
-   SET_HIGH_BOUND (P),						\
-   __ptrvalue (P) = new_buffer + (__ptrvalue (P) - old_buffer))
-# define ELSE_EXTEND_BUFFER_HIGH_BOUND		\
-  else						\
-    {						\
-      SET_HIGH_BOUND (b);			\
-      SET_HIGH_BOUND (begalt);			\
-      if (fixup_alt_jump)			\
-	SET_HIGH_BOUND (fixup_alt_jump);	\
-      if (laststart)				\
-	SET_HIGH_BOUND (laststart);		\
-      if (pending_exact)			\
-	SET_HIGH_BOUND (pending_exact);		\
-    }
-#else
-# define MOVE_BUFFER_POINTER(P) ((P) = new_buffer + ((P) - old_buffer))
-# define ELSE_EXTEND_BUFFER_HIGH_BOUND
-#endif
 #define EXTEND_BUFFER()							\
   do {									\
     unsigned char *old_buffer = bufp->buffer;				\
@@ -1684,23 +1652,24 @@ static int analyze_first (re_char *p, re_char *pend,
     bufp->allocated <<= 1;						\
     if (bufp->allocated > MAX_BUF_SIZE)					\
       bufp->allocated = MAX_BUF_SIZE;					\
+    ptrdiff_t b_off = b - old_buffer;					\
+    ptrdiff_t begalt_off = begalt - old_buffer;				\
+    bool fixup_alt_jump_set = !!fixup_alt_jump;				\
+    bool laststart_set = !!laststart;					\
+    bool pending_exact_set = !!pending_exact;				\
+    ptrdiff_t fixup_alt_jump_off, laststart_off, pending_exact_off;	\
+    if (fixup_alt_jump_set) fixup_alt_jump_off = fixup_alt_jump - old_buffer; \
+    if (laststart_set) laststart_off = laststart - old_buffer;		\
+    if (pending_exact_set) pending_exact_off = pending_exact - old_buffer; \
     RETALLOC (bufp->buffer, bufp->allocated, unsigned char);		\
     if (bufp->buffer == NULL)						\
       return REG_ESPACE;						\
-    /* If the buffer moved, move all the pointers into it.  */		\
-    if (old_buffer != bufp->buffer)					\
-      {									\
-	unsigned char *new_buffer = bufp->buffer;			\
-	MOVE_BUFFER_POINTER (b);					\
-	MOVE_BUFFER_POINTER (begalt);					\
-	if (fixup_alt_jump)						\
-	  MOVE_BUFFER_POINTER (fixup_alt_jump);				\
-	if (laststart)							\
-	  MOVE_BUFFER_POINTER (laststart);				\
-	if (pending_exact)						\
-	  MOVE_BUFFER_POINTER (pending_exact);				\
-      }									\
-    ELSE_EXTEND_BUFFER_HIGH_BOUND					\
+    unsigned char *new_buffer = bufp->buffer;				\
+    b = new_buffer + b_off;						\
+    begalt = new_buffer + begalt_off;					\
+    if (fixup_alt_jump_set) fixup_alt_jump = new_buffer + fixup_alt_jump_off; \
+    if (laststart_set) laststart = new_buffer + laststart_off;		\
+    if (pending_exact_set) pending_exact = new_buffer + pending_exact_off; \
   } while (0)
 
 
@@ -4915,12 +4884,6 @@ re_match (struct re_pattern_buffer *bufp, const char *string,
 }
 WEAK_ALIAS (__re_match, re_match)
 #endif /* not emacs */
-
-#ifdef emacs
-/* In Emacs, this is the string or buffer in which we
-   are matching.  It is used for looking up syntax properties.  */
-Lisp_Object re_match_object;
-#endif
 
 /* re_match_2 matches the compiled pattern in BUFP against the
    the (virtual) concatenation of STRING1 and STRING2 (of length SIZE1

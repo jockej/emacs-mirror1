@@ -3124,6 +3124,7 @@ scan_sexps_forward (struct lisp_parse_state *state,
   ptrdiff_t prev_from;		/* Keep one character before FROM.  */
   ptrdiff_t prev_from_byte;
   int prev_from_syntax, prev_prev_from_syntax;
+  int syntax;
   bool boundary_stop = commentstop == -1;
   bool nofence;
   bool found;
@@ -3191,14 +3192,10 @@ do { prev_from = from;				\
 
   while (from < end)
     {
-      int syntax;
-
       if (SYNTAX_FLAGS_COMSTART_FIRST (prev_from_syntax)
 	  && (c1 = FETCH_CHAR (from_byte),
 	      syntax = SYNTAX_WITH_FLAGS (c1),
 	      SYNTAX_FLAGS_COMSTART_SECOND (syntax)))
-	/* Duplicate code to avoid a complex if-expression
-	   which causes trouble for the SGI compiler.  */
 	{
 	  /* Record the comment style we have entered so that only
 	     the comment-end sequence of the same style actually
@@ -3258,7 +3255,24 @@ do { prev_from = from;				\
 	  while (from < end)
 	    {
 	      int symchar = FETCH_CHAR_AS_MULTIBYTE (from_byte);
-	      switch (SYNTAX (symchar))
+
+              if (SYNTAX_FLAGS_COMSTART_FIRST (prev_from_syntax)
+                  && (syntax = SYNTAX_WITH_FLAGS (symchar),
+                      SYNTAX_FLAGS_COMSTART_SECOND (syntax)))
+                {
+                  state->comstyle
+                    = SYNTAX_FLAGS_COMMENT_STYLE (syntax, prev_from_syntax);
+                  comnested = (SYNTAX_FLAGS_COMMENT_NESTED (prev_from_syntax)
+                               | SYNTAX_FLAGS_COMMENT_NESTED (syntax));
+                  state->incomment = comnested ? 1 : -1;
+                  state->comstr_start = prev_from;
+                  INC_FROM;
+                  prev_from_syntax = Smax;
+                  code = Scomment;
+                  goto atcomment;
+                }
+
+              switch (SYNTAX (symchar))
 		{
 		case Scharquote:
 		case Sescape:
@@ -3280,6 +3294,7 @@ do { prev_from = from;				\
 
 	case Scomment_fence: /* Can't happen because it's handled above.  */
 	case Scomment:
+        atcomment:
           if (commentstop || boundary_stop) goto done;
 	startincomment:
 	  /* The (from == BEGV) test was to enter the loop in the middle so

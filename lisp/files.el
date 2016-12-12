@@ -51,20 +51,21 @@ when it has unsaved changes."
   nil
   "Alist of abbreviations for file directories.
 A list of elements of the form (FROM . TO), each meaning to replace
-FROM with TO when it appears in a directory name.  This replacement is
-done when setting up the default directory of a newly visited file.
+a match for FROM with TO when a directory name matches FROM.  This
+replacement is done when setting up the default directory of a
+newly visited file buffer.
 
-FROM is matched against directory names anchored at the first
-character, so it should start with a \"\\\\\\=`\", or, if directory
-names cannot have embedded newlines, with a \"^\".
+FROM is a regexp that is matched against directory names anchored at
+the first character, so it should start with a \"\\\\\\=`\", or, if
+directory names cannot have embedded newlines, with a \"^\".
 
 FROM and TO should be equivalent names, which refer to the
-same directory.  Do not use `~' in the TO strings;
-they should be ordinary absolute directory names.
+same directory.  TO should be an absolute directory name.
+Do not use `~' in the TO strings.
 
 Use this feature when you have directories which you normally refer to
 via absolute symbolic links.  Make TO the name of the link, and FROM
-the name it is linked to."
+a regexp matching the name it is linked to."
   :type '(repeat (cons :format "%v"
 		       :value ("\\`" . "")
 		       (regexp :tag "From")
@@ -1128,6 +1129,12 @@ consecutive checks.  For example:
 		   :format "Do not use file name cache older then %v seconds"
 		   :value 10)))
 
+(defun file-local-name (file)
+  "Return the local name component of FILE.
+It returns a file name which can be used directly as argument of
+`process-file', `start-file-process', or `shell-command'."
+  (or (file-remote-p file 'localname) file))
+
 (defun file-local-copy (file)
   "Copy the file FILE into a temporary file on this machine.
 Returns the name of the local copy, or nil, if FILE is directly
@@ -1212,7 +1219,7 @@ containing it, until no links are left at any level.
 	    (setq dirfile (directory-file-name dir))
 	    ;; If these are equal, we have the (or a) root directory.
 	    (or (string= dir dirfile)
-		(and (memq system-type '(windows-nt ms-dos cygwin nacl))
+		(and (file-name-case-insensitive-p dir)
 		     (eq (compare-strings dir 0 nil dirfile 0 nil t) t))
 		;; If this is the same dir we last got the truename for,
 		;; save time--don't recalculate.
@@ -1321,7 +1328,7 @@ Optional second argument FLAVOR controls the units and the display format:
     "^\\(?:/\\(?:afs/\\|m\\(?:edia/\\|nt\\)\\|\\(?:ne\\|tmp_mn\\)t/\\)\\)")
   "File systems which ought to be mounted."
   :group 'files
-  :version "25.2"
+  :version "26.1"
   :require 'regexp-opt
   :type 'regexp)
 
@@ -1598,7 +1605,7 @@ file names with wildcards."
 
 (defun find-file--read-only (fun filename wildcards)
   (unless (or (and wildcards find-file-wildcards
-		   (not (string-match "\\`/:" filename))
+		   (not (file-name-quoted-p filename))
 		   (string-match "[[*?]" filename))
 	      (file-exists-p filename))
     (error "%s does not exist" filename))
@@ -1778,7 +1785,8 @@ Choose the buffer's name using `generate-new-buffer-name'."
 (make-obsolete-variable 'automount-dir-prefix 'directory-abbrev-alist "24.3")
 
 (defvar abbreviated-home-dir nil
-  "The user's homedir abbreviated according to `directory-abbrev-alist'.")
+  "Regexp matching the user's homedir at the beginning of file name.
+The value includes abbreviation according to `directory-abbrev-alist'.")
 
 (defun abbreviate-file-name (filename)
   "Return a version of FILENAME shortened using `directory-abbrev-alist'.
@@ -1793,10 +1801,7 @@ home directory is a root directory) and removes automounter prefixes
 			     (substring filename (1- (match-end 0))))))
 	(setq filename (substring filename (1- (match-end 0)))))
     ;; Avoid treating /home/foo as /home/Foo during `~' substitution.
-    ;; To fix this right, we need a `file-name-case-sensitive-p'
-    ;; function, but we don't have that yet, so just guess.
-    (let ((case-fold-search
-	   (memq system-type '(ms-dos windows-nt darwin cygwin))))
+    (let ((case-fold-search (file-name-case-insensitive-p filename)))
       ;; If any elt of directory-abbrev-alist matches this name,
       ;; abbreviate accordingly.
       (dolist (dir-abbrev directory-abbrev-alist)
@@ -1812,8 +1817,23 @@ home directory is a root directory) and removes automounter prefixes
       (or abbreviated-home-dir
 	  (setq abbreviated-home-dir
 		(let ((abbreviated-home-dir "$foo"))
-		  (concat "\\`" (abbreviate-file-name (expand-file-name "~"))
-			  "\\(/\\|\\'\\)"))))
+                  (setq abbreviated-home-dir
+                        (concat "\\`"
+                                (abbreviate-file-name (expand-file-name "~"))
+                                "\\(/\\|\\'\\)"))
+                  ;; Depending on whether default-directory does or
+                  ;; doesn't include non-ASCII characters, the value
+                  ;; of abbreviated-home-dir could be multibyte or
+                  ;; unibyte.  In the latter case, we need to decode
+                  ;; it.  Note that this function is called for the
+                  ;; first time (from startup.el) when
+                  ;; locale-coding-system is already set up.
+                  (if (multibyte-string-p abbreviated-home-dir)
+                      abbreviated-home-dir
+                    (decode-coding-string abbreviated-home-dir
+                                          (if (eq system-type 'windows-nt)
+                                              'utf-8
+                                            locale-coding-system))))))
 
       ;; If FILENAME starts with the abbreviated homedir,
       ;; make it start with `~' instead.
@@ -1965,7 +1985,7 @@ the various files."
 	  (error "%s is a directory" filename))
     (if (and wildcards
 	     find-file-wildcards
-	     (not (string-match "\\`/:" filename))
+	     (not (file-name-quoted-p filename))
 	     (string-match "[[*?]" filename))
 	(let ((files (condition-case nil
 			 (file-expand-wildcards filename t)
@@ -2505,8 +2525,8 @@ since only a single case-insensitive search through the alist is made."
      ;; The list of archive file extensions should be in sync with
      ;; `auto-coding-alist' with `no-conversion' coding system.
      ("\\.\\(\
-arc\\|zip\\|lzh\\|lha\\|zoo\\|[jew]ar\\|xpi\\|rar\\|7z\\|\
-ARC\\|ZIP\\|LZH\\|LHA\\|ZOO\\|[JEW]AR\\|XPI\\|RAR\\|7Z\\)\\'" . archive-mode)
+arc\\|zip\\|lzh\\|lha\\|zoo\\|[jew]ar\\|xpi\\|rar\\|cbr\\|7z\\|\
+ARC\\|ZIP\\|LZH\\|LHA\\|ZOO\\|[JEW]AR\\|XPI\\|RAR\\|CBR\\|7Z\\)\\'" . archive-mode)
      ("\\.oxt\\'" . archive-mode) ;(Open|Libre)Office extensions.
      ("\\.\\(deb\\|[oi]pk\\)\\'" . archive-mode) ; Debian/Opkg packages.
      ;; Mailer puts message to be edited in
@@ -2898,7 +2918,9 @@ we don't actually set it to the same mode the buffer already has."
     (unless done
       (if buffer-file-name
 	  (let ((name buffer-file-name)
-		(remote-id (file-remote-p buffer-file-name)))
+		(remote-id (file-remote-p buffer-file-name))
+		(case-insensitive-p (file-name-case-insensitive-p
+				     buffer-file-name)))
 	    ;; Remove backup-suffixes from file name.
 	    (setq name (file-name-sans-versions name))
 	    ;; Remove remote file name identification.
@@ -2908,12 +2930,12 @@ we don't actually set it to the same mode the buffer already has."
 	    (while name
 	      ;; Find first matching alist entry.
 	      (setq mode
-		    (if (memq system-type '(windows-nt cygwin))
-			;; System is case-insensitive.
+		    (if case-insensitive-p
+			;; Filesystem is case-insensitive.
 			(let ((case-fold-search t))
 			  (assoc-default name auto-mode-alist
 					 'string-match))
-		      ;; System is case-sensitive.
+		      ;; Filesystem is case-sensitive.
 		      (or
 		       ;; First match case-sensitively.
 		       (let ((case-fold-search nil))
@@ -3245,7 +3267,7 @@ return as the symbol specifying the mode."
 	       nil)
 	      ((looking-at "[ \t]*\\([^ \t\n\r:;]+\\)\\([ \t]*-\\*-\\)")
 	       ;; Simple form: "-*- MODENAME -*-".
-	       (if (memq handle-mode '(nil t))
+	       (if (eq handle-mode t)
 		   (intern (concat (match-string 1) "-mode"))))
 	      (t
 	       ;; Hairy form: '-*-' [ <variable> ':' <value> ';' ]* '-*-'
@@ -4691,7 +4713,7 @@ on a DOS/Windows machine, it returns FILENAME in expanded form."
     (setq filename (expand-file-name filename))
     (let ((fremote (file-remote-p filename))
 	  (dremote (file-remote-p directory))
-	  (fold-case (or (memq system-type '(ms-dos cygwin windows-nt))
+	  (fold-case (or (file-name-case-insensitive-p filename)
 			 read-file-name-completion-ignore-case)))
       (if ;; Conditions for separate trees
 	  (or
@@ -5336,14 +5358,24 @@ raised."
   "^\\([^.]\\|\\.\\([^.]\\|\\..\\)\\).*"
   "Regexp matching any file name except \".\" and \"..\".")
 
+(defun files--force (no-such fn &rest args)
+  "Use NO-SUCH to affect behavior of function FN applied to list ARGS.
+This acts like (apply FN ARGS) except it returns NO-SUCH if it is
+non-nil and if FN fails due to a missing file or directory."
+  (condition-case err
+      (apply fn args)
+    (file-missing (or no-such (signal (car err) (cdr err))))))
+
 (defun delete-directory (directory &optional recursive trash)
   "Delete the directory named DIRECTORY.  Does not follow symlinks.
-If RECURSIVE is non-nil, all files in DIRECTORY are deleted as well.
+If RECURSIVE is non-nil, delete files in DIRECTORY as well, with
+no error if something else is simultaneously deleting them.
 TRASH non-nil means to trash the directory instead, provided
 `delete-by-moving-to-trash' is non-nil.
 
-When called interactively, TRASH is t if no prefix argument is
-given.  With a prefix argument, TRASH is nil."
+When called interactively, TRASH is nil if and only if a prefix
+argument is given, and a further prompt asks the user for
+RECURSIVE if DIRECTORY is nonempty."
   (interactive
    (let* ((trashing (and delete-by-moving-to-trash
 			 (null current-prefix-arg)))
@@ -5381,18 +5413,22 @@ given.  With a prefix argument, TRASH is nil."
 	(move-file-to-trash directory)))
      ;; Otherwise, call ourselves recursively if needed.
      (t
-      (if (and recursive (not (file-symlink-p directory)))
-	  (mapc (lambda (file)
-		  ;; This test is equivalent to
-		  ;; (and (file-directory-p fn) (not (file-symlink-p fn)))
-		  ;; but more efficient
-		  (if (eq t (car (file-attributes file)))
-		      (delete-directory file recursive nil)
-		    (delete-file file nil)))
-		;; We do not want to delete "." and "..".
-		(directory-files
-		 directory 'full directory-files-no-dot-files-regexp)))
-      (delete-directory-internal directory)))))
+      (when (or (not recursive) (file-symlink-p directory)
+		(let* ((files
+			(files--force t #'directory-files directory 'full
+				      directory-files-no-dot-files-regexp))
+		       (directory-exists (listp files)))
+		  (when directory-exists
+		    (mapc (lambda (file)
+			    ;; This test is equivalent to but more efficient
+			    ;; than (and (file-directory-p fn)
+			    ;;		 (not (file-symlink-p fn))).
+			    (if (eq t (car (file-attributes file)))
+				(delete-directory file recursive)
+			      (files--force t #'delete-file file)))
+			  files))
+		  directory-exists))
+	(files--force recursive #'delete-directory-internal directory))))))
 
 (defun file-equal-p (file1 file2)
   "Return non-nil if files FILE1 and FILE2 name the same file.
@@ -6199,9 +6235,7 @@ default directory.  However, if FULL is non-nil, they are absolute."
 	   ;; This can be more than one dir
 	   ;; if DIRPART contains wildcards.
 	   (dirs (if (and dirpart
-			  (string-match "[[*?]"
-					(or (file-remote-p dirpart 'localname)
-					    dirpart)))
+			  (string-match "[[*?]" (file-local-name dirpart)))
 		     (mapcar 'file-name-as-directory
 			     (file-expand-wildcards (directory-file-name dirpart)))
 		   (list dirpart)))
@@ -6743,7 +6777,7 @@ If any of these functions returns nil, killing Emacs is canceled.
 `save-buffers-kill-emacs' calls these functions, but `kill-emacs',
 the low level primitive, does not.  See also `kill-emacs-hook'."
   :type 'hook
-  :version "25.2"
+  :version "26.1"
   :group 'convenience)
 
 (defcustom confirm-kill-emacs nil
@@ -6757,11 +6791,22 @@ be a predicate function; for example `yes-or-no-p'."
   :group 'convenience
   :version "21.1")
 
+(defcustom confirm-kill-processes t
+  "Non-nil if Emacs should confirm killing processes on exit.
+If this variable is nil, the value of
+`process-query-on-exit-flag' is ignored.  Otherwise, if there are
+processes with a non-nil `process-query-on-exit-flag', Emacs will
+prompt the user before killing them."
+  :type 'boolean
+  :group 'convenience
+  :version "26.1")
+
 (defun save-buffers-kill-emacs (&optional arg)
   "Offer to save each buffer, then kill this Emacs process.
 With prefix ARG, silently save all file-visiting buffers without asking.
 If there are active processes where `process-query-on-exit-flag'
-returns non-nil, asks whether processes should be killed.
+returns non-nil and `confirm-kill-processes' is non-nil,
+asks whether processes should be killed.
 Runs the members of `kill-emacs-query-functions' in turn and stops
 if any returns nil.  If `confirm-kill-emacs' is non-nil, calls it."
   (interactive "P")
@@ -6776,6 +6821,7 @@ if any returns nil.  If `confirm-kill-emacs' is non-nil, calls it."
                 (yes-or-no-p "Modified buffers exist; exit anyway? ")))
      (or (not (fboundp 'process-list))
          ;; process-list is not defined on MSDOS.
+         (not confirm-kill-processes)
          (let ((processes (process-list))
                active)
            (while processes
@@ -6898,6 +6944,28 @@ only these files will be asked to be saved."
          (apply operation arguments)))
       (_
        (apply operation arguments)))))
+
+(defsubst file-name-quoted-p (name)
+  "Whether NAME is quoted with prefix \"/:\".
+If NAME is a remote file name, check the local part of NAME."
+  (string-prefix-p "/:" (file-local-name name)))
+
+(defsubst file-name-quote (name)
+  "Add the quotation prefix \"/:\" to file NAME.
+If NAME is a remote file name, the local part of NAME is quoted.
+If NAME is already a quoted file name, NAME is returned unchanged."
+  (if (file-name-quoted-p name)
+      name
+    (concat (file-remote-p name) "/:" (file-local-name name))))
+
+(defsubst file-name-unquote (name)
+  "Remove quotation prefix \"/:\" from file NAME, if any.
+If NAME is a remote file name, the local part of NAME is unquoted."
+  (let ((localname (file-local-name name)))
+    (when (file-name-quoted-p localname)
+      (setq
+       localname (if (= (length localname) 2) "/" (substring localname 2))))
+    (concat (file-remote-p name) localname)))
 
 ;; Symbolic modes and read-file-modes.
 

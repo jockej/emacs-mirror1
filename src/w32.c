@@ -21,8 +21,8 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
    Geoff Voelker (voelker@cs.washington.edu)                         7-29-94
 */
 
-/* Enable GNU extensions in gnulib replacement headers.  */
-#define _GNU_SOURCE 1
+#define DEFER_MS_W32_H
+#include <config.h>
 
 #include <mingw_time.h>
 #include <stddef.h> /* for offsetof */
@@ -40,9 +40,10 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <sys/utime.h>
 #include <math.h>
 
-/* must include CRT headers *before* config.h */
+/* Include (most) CRT headers *before* ms-w32.h.  */
+#include <ms-w32.h>
 
-#include <config.h>
+#include <string.h>	/* for strerror, needed by sys_strerror */
 #include <mbstring.h>	/* for _mbspbrk, _mbslwr, _mbsrchr, ... */
 
 #undef access
@@ -93,13 +94,6 @@ extern void dynlib_reset_last_error (void);
 #include <pwd.h>
 #include <grp.h>
 
-/* MinGW64 defines these in its _mingw.h.  */
-#ifndef _ANONYMOUS_UNION
-# define _ANONYMOUS_UNION
-#endif
-#ifndef _ANONYMOUS_STRUCT
-# define _ANONYMOUS_STRUCT
-#endif
 #include <windows.h>
 /* Some versions of compiler define MEMORYSTATUSEX, some don't, so we
    use a different name to avoid compilation problems.  */
@@ -278,10 +272,8 @@ static BOOL WINAPI revert_to_self (void);
 static int sys_access (const char *, int);
 extern void *e_malloc (size_t);
 extern int sys_select (int, SELECT_TYPE *, SELECT_TYPE *, SELECT_TYPE *,
-		       struct timespec *, void *);
+		       const struct timespec *, const sigset_t *);
 extern int sys_dup (int);
-
-
 
 
 /* Initialization states.
@@ -333,6 +325,7 @@ static BOOL g_b_init_set_named_security_info_a;
 static BOOL g_b_init_get_adapters_info;
 
 BOOL g_b_init_compare_string_w;
+BOOL g_b_init_debug_break_process;
 
 /*
   BEGIN: Wrapper functions around OpenProcessToken
@@ -1516,6 +1509,16 @@ w32_valid_pointer_p (void *p, int size)
 /* Current codepage for encoding file names.  */
 static int file_name_codepage;
 
+/* Initialize the codepage used for decoding file names.  This is
+   needed to undo the value recorded during dumping, which might not
+   be correct when we run the dumped Emacs.  */
+void
+w32_init_file_name_codepage (void)
+{
+  file_name_codepage = CP_ACP;
+  w32_ansi_code_page = CP_ACP;
+}
+
 /* Produce a Windows ANSI codepage suitable for encoding file names.
    Return the information about that codepage in CP_INFO.  */
 int
@@ -1532,12 +1535,13 @@ codepage_for_filenames (CPINFO *cp_info)
   if (NILP (current_encoding))
     current_encoding = Vdefault_file_name_coding_system;
 
-  if (!EQ (last_file_name_encoding, current_encoding))
+  if (!EQ (last_file_name_encoding, current_encoding)
+      || NILP (last_file_name_encoding))
     {
       /* Default to the current ANSI codepage.  */
       file_name_codepage = w32_ansi_code_page;
 
-      if (NILP (current_encoding))
+      if (!NILP (current_encoding))
 	{
 	  char *cpname = SSDATA (SYMBOL_NAME (current_encoding));
 	  char *cp = NULL, *end;
@@ -1566,6 +1570,9 @@ codepage_for_filenames (CPINFO *cp_info)
 	  if (!GetCPInfo (file_name_codepage, &cp))
 	    emacs_abort ();
 	}
+
+      /* Cache the new value.  */
+      last_file_name_encoding = current_encoding;
     }
   if (cp_info)
     *cp_info = cp;
@@ -2870,12 +2877,29 @@ init_environment (char ** argv)
      The same applies to COMSPEC.  */
   {
     char ** envp;
+    const char *path = "PATH=";
+    int path_len = strlen (path);
+    const char *comspec = "COMSPEC=";
+    int comspec_len = strlen (comspec);
 
     for (envp = environ; *envp; envp++)
-      if (_strnicmp (*envp, "PATH=", 5) == 0)
-	memcpy (*envp, "PATH=", 5);
-      else if (_strnicmp (*envp, "COMSPEC=", 8) == 0)
-	memcpy (*envp, "COMSPEC=", 8);
+      if (_strnicmp (*envp, path, path_len) == 0)
+        memcpy (*envp, path, path_len);
+      else if (_strnicmp (*envp, comspec, comspec_len) == 0)
+        memcpy (*envp, comspec, comspec_len);
+
+    /* Make the same modification to `process-environment' which has
+       already been initialized in set_initial_environment.  */
+    for (Lisp_Object env = Vprocess_environment; CONSP (env); env = XCDR (env))
+    {
+      Lisp_Object entry = XCAR (env);
+      if (_strnicmp (SDATA (entry), path, path_len) == 0)
+        for (int i = 0; i < path_len; i++)
+          SSET (entry, i, path[i]);
+      else if (_strnicmp (SDATA (entry), comspec, comspec_len) == 0)
+        for (int i = 0; i < comspec_len; i++)
+          SSET (entry, i, comspec[i]);
+    }
   }
 
   /* Remember the initial working directory for getcwd.  */
@@ -9656,6 +9680,7 @@ globals_of_w32 (void)
   g_b_init_set_named_security_info_a = 0;
   g_b_init_get_adapters_info = 0;
   g_b_init_compare_string_w = 0;
+  g_b_init_debug_break_process = 0;
   num_of_processors = 0;
   /* The following sets a handler for shutdown notifications for
      console apps. This actually applies to Emacs in both console and

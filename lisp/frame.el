@@ -2021,20 +2021,36 @@ widths."
 
 ;; Blinking cursor
 
+(defvar blink-cursor-idle-timer nil
+  "Timer started after `blink-cursor-delay' seconds of Emacs idle time.
+The function `blink-cursor-start' is called when the timer fires.")
+
+(defvar blink-cursor-timer nil
+  "Timer started from `blink-cursor-start'.
+This timer calls `blink-cursor-timer-function' every
+`blink-cursor-interval' seconds.")
+
 (defgroup cursor nil
   "Displaying text cursors."
   :version "21.1"
   :group 'frames)
 
 (defcustom blink-cursor-delay 0.5
-  "Seconds of idle time after which cursor starts to blink."
+  "Seconds of idle time before the first blink of the cursor.
+Values smaller than 0.2 sec are treated as 0.2 sec."
   :type 'number
-  :group 'cursor)
+  :group 'cursor
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when blink-cursor-idle-timer (blink-cursor--start-idle-timer))))
 
 (defcustom blink-cursor-interval 0.5
   "Length of cursor blink interval in seconds."
   :type 'number
-  :group 'cursor)
+  :group 'cursor
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (when blink-cursor-timer (blink-cursor--start-timer))))
 
 (defcustom blink-cursor-blinks 10
   "How many times to blink before using a solid cursor on NS, X, and MS-Windows.
@@ -2046,14 +2062,23 @@ Use 0 or negative value to blink forever."
 (defvar blink-cursor-blinks-done 1
   "Number of blinks done since we started blinking on NS, X, and MS-Windows.")
 
-(defvar blink-cursor-idle-timer nil
-  "Timer started after `blink-cursor-delay' seconds of Emacs idle time.
-The function `blink-cursor-start' is called when the timer fires.")
+(defun blink-cursor--start-idle-timer ()
+  "Start the `blink-cursor-idle-timer'."
+  (when blink-cursor-idle-timer (cancel-timer blink-cursor-idle-timer))
+  (setq blink-cursor-idle-timer
+        ;; The 0.2 sec limitation from below is to avoid erratic
+        ;; behavior (or downright failure to display the cursor
+        ;; during command execution) if they set blink-cursor-delay
+        ;; to a very small or even zero value.
+        (run-with-idle-timer (max 0.2 blink-cursor-delay)
+                             :repeat #'blink-cursor-start)))
 
-(defvar blink-cursor-timer nil
-  "Timer started from `blink-cursor-start'.
-This timer calls `blink-cursor-timer-function' every
-`blink-cursor-interval' seconds.")
+(defun blink-cursor--start-timer ()
+  "Start the `blink-cursor-timer'."
+  (when blink-cursor-timer (cancel-timer blink-cursor-timer))
+  (setq blink-cursor-timer
+        (run-with-timer blink-cursor-interval blink-cursor-interval
+                        #'blink-cursor-timer-function)))
 
 (defun blink-cursor-start ()
   "Timer function called from the timer `blink-cursor-idle-timer'.
@@ -2064,9 +2089,7 @@ command starts, by installing a pre-command hook."
     ;; Set up the timer first, so that if this signals an error,
     ;; blink-cursor-end is not added to pre-command-hook.
     (setq blink-cursor-blinks-done 1)
-    (setq blink-cursor-timer
-	  (run-with-timer blink-cursor-interval blink-cursor-interval
-			  'blink-cursor-timer-function))
+    (blink-cursor--start-timer)
     (add-hook 'pre-command-hook 'blink-cursor-end)
     (internal-show-cursor nil nil)))
 
@@ -2113,10 +2136,7 @@ This is done when a frame gets focus.  Blink timers may be stopped by
   (when (and blink-cursor-mode
 	     (not blink-cursor-idle-timer))
     (remove-hook 'post-command-hook 'blink-cursor-check)
-    (setq blink-cursor-idle-timer
-          (run-with-idle-timer blink-cursor-delay
-                               blink-cursor-delay
-                               'blink-cursor-start))))
+    (blink-cursor--start-idle-timer)))
 
 (define-obsolete-variable-alias 'blink-cursor 'blink-cursor-mode "22.1")
 
@@ -2147,10 +2167,8 @@ terminals, cursor blinking is controlled by the terminal."
   (when blink-cursor-mode
     (add-hook 'focus-in-hook #'blink-cursor-check)
     (add-hook 'focus-out-hook #'blink-cursor-suspend)
-    (setq blink-cursor-idle-timer
-          (run-with-idle-timer blink-cursor-delay
-                               blink-cursor-delay
-                               #'blink-cursor-start))))
+    (blink-cursor--start-idle-timer)))
+
 
 
 ;; Frame maximization/fullscreen
@@ -2231,9 +2249,8 @@ See also `toggle-frame-maximized'."
  'window-system-version "it does not give useful information." "24.3")
 
 ;; Variables which should trigger redisplay of the current buffer.
-(setq redisplay--variables (make-hash-table :test 'eq :size 10))
 (mapc (lambda (var)
-        (puthash var 1 redisplay--variables))
+        (add-variable-watcher var (symbol-function 'set-buffer-redisplay)))
       '(line-spacing
         overline-margin
         line-prefix

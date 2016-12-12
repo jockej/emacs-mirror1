@@ -237,7 +237,7 @@ If the result is non-nil, then break.  Errors are ignored."
   "Whether or not to pause for `edebug-sit-for-seconds' on reaching a break."
   :type 'boolean
   :group 'edebug
-  :version "25.2")
+  :version "26.1")
 
 ;;; Form spec utilities.
 
@@ -2363,7 +2363,7 @@ MSG is printed after `::::} '."
 (defvar edebug-window-data)  ; window and window-start for current function
 (defvar edebug-outside-windows) ; outside window configuration
 (defvar edebug-eval-buffer) ; for the evaluation list.
-(defvar edebug-outside-d-c-i-n-s-w) ; outside default-cursor-in-non-selected-windows
+(defvar edebug-outside-d-c-i-n-s-w) ; outside default cursor-in-non-selected-windows
 
 (defvar edebug-eval-list nil) ;; List of expressions to evaluate.
 
@@ -3798,7 +3798,9 @@ Otherwise call `debug' normally."
 	  (forward-line 1)
 	  (delete-region last-ok-point (point)))
 
-	 ((looking-at "^  edebug")
+	 ((looking-at (if debugger-stack-frame-as-list
+                          "^  (edebug"
+                        "^  edebug"))
 	  (forward-line 1)
 	  (delete-region last-ok-point (point))
 	  )))

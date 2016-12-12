@@ -32,6 +32,9 @@
 
 ;;; Code:
 
+(require 'dom)
+(require 'seq)
+(require 'subr-x)
 (eval-when-compile
   (require 'skeleton)
   (require 'cl-lib))
@@ -1837,10 +1840,22 @@ This takes effect when first loading the library.")
       ("img" t ("align" ,@valign ("texttop") ("absmiddle") ("absbottom"))
        ("src") ("alt") ("width" "1") ("height" "1")
        ("border" "1") ("vspace" "1") ("hspace" "1") ("ismap" t))
-      ("input" t ("size" ,@1-9) ("maxlength" ,@1-9) ("checked" t) ,name
-       ("type" ("text") ("password") ("checkbox") ("radio")
-	("submit") ("reset"))
-       ("value"))
+      ("input" t ,name ("accept") ("alt") ("autocomplete" ("on") ("off"))
+       ("autofocus" t) ("checked" t) ("dirname") ("disabled" t) ("form")
+       ("formaction")
+       ("formenctype" ("application/x-www-form-urlencoded")
+        ("multipart/form-data") ("text/plain"))
+       ("formmethod" ("get") ("post"))
+       ("formnovalidate" t)
+       ("formtarget" ("_blank") ("_self") ("_parent") ("_top"))
+       ("height") ("inputmode") ("list") ("max") ("maxlength") ("min")
+       ("minlength") ("multiple" t) ("pattern") ("placeholder")
+       ("readonly" t) ("required" t) ("size") ("src") ("step")
+       ("type" ("hidden") ("text") ("search") ("tel") ("url") ("email")
+        ("password") ("date") ("time") ("number") ("range") ("color")
+        ("checkbox") ("radio") ("file") ("submit") ("image") ("reset")
+        ("button"))
+       ("value") ("width"))
       ("link" t ,@link)
       ("menu" ,@list)
       ("ol" ,@list ("type" ("A") ("a") ("I") ("i") ("1")))
@@ -1923,7 +1938,7 @@ This takes effect when first loading the library.")
       ("hgroup" \n)
       ("html" (\n
 	       "<head>\n"
-	       "<title>" (setq str (read-input "Title: ")) "</title>\n"
+	       "<title>" (setq str (read-string "Title: ")) "</title>\n"
 	       "</head>\n"
 	       "<body>\n<h1>" str "</h1>\n" _
 	       "\n<address>\n<a href=\"mailto:"
@@ -2168,6 +2183,55 @@ This takes effect when first loading the library.")
 	 nil t)
 	(match-string-no-properties 1))))
 
+(defvar html--buffer-classes-cache nil
+  "Cache for `html-current-buffer-classes'.
+When set, this should be a cons cell where the CAR is the
+buffer's tick counter (as produced by `buffer-modified-tick'),
+and the CDR is the list of class names found in the buffer.")
+(make-variable-buffer-local 'html--buffer-classes-cache)
+
+(defvar html--buffer-ids-cache nil
+  "Cache for `html-current-buffer-ids'.
+When set, this should be a cons cell where the CAR is the
+buffer's tick counter (as produced by `buffer-modified-tick'),
+and the CDR is the list of class names found in the buffer.")
+(make-variable-buffer-local 'html--buffer-ids-cache)
+
+(defun html-current-buffer-classes ()
+  "Return a list of class names used in the current buffer.
+The result is cached in `html--buffer-classes-cache'."
+  (let ((tick (buffer-modified-tick)))
+    (if (eq (car html--buffer-classes-cache) tick)
+        (cdr html--buffer-classes-cache)
+      (let* ((dom (libxml-parse-html-region (point-min) (point-max)))
+             (classes
+              (seq-mapcat
+               (lambda (el)
+                 (when-let (class-list
+                            (cdr (assq 'class (dom-attributes el))))
+                   (split-string class-list)))
+               (dom-by-class dom ""))))
+        (setq-local html--buffer-classes-cache (cons tick classes))
+        classes))))
+
+(defun html-current-buffer-ids ()
+  "Return a list of IDs used in the current buffer.
+The result is cached in `html--buffer-ids-cache'."
+  (let ((tick (buffer-modified-tick)))
+    (if (eq (car html--buffer-ids-cache) tick)
+        (cdr html--buffer-ids-cache)
+      (let* ((dom
+              (libxml-parse-html-region (point-min) (point-max)))
+             (ids
+              (seq-mapcat
+               (lambda (el)
+                 (when-let (id-list
+                            (cdr (assq 'id (dom-attributes el))))
+                   (split-string id-list)))
+               (dom-by-id dom ""))))
+        (setq-local html--buffer-ids-cache (cons tick ids))
+        ids))))
+
 
 ;;;###autoload
 (define-derived-mode html-mode sgml-mode '(sgml-xml-mode "XHTML" "HTML")
@@ -2217,6 +2281,12 @@ To work around that, do:
 	      (lambda () (char-before (match-end 0))))
   (setq-local add-log-current-defun-function #'html-current-defun-name)
   (setq-local sentence-end-base "[.?!][]\"'”)}]*\\(<[^>]*>\\)*")
+
+  (when (fboundp 'libxml-parse-html-region)
+    (defvar css-class-list-function)
+    (setq-local css-class-list-function #'html-current-buffer-classes)
+    (defvar css-id-list-function)
+    (setq-local css-id-list-function #'html-current-buffer-ids))
 
   (setq imenu-create-index-function 'html-imenu-index)
 

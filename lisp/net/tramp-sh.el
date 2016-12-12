@@ -69,19 +69,18 @@ files conditionalize this setup based on the TERM environment variable."
   :require 'tramp)
 
 ;;;###tramp-autoload
-(defcustom tramp-histfile-override ".tramp_history"
+(defcustom tramp-histfile-override "~/.tramp_history"
   "When invoking a shell, override the HISTFILE with this value.
 When setting to a string, it redirects the shell history to that
 file.  Be careful when setting to \"/dev/null\"; this might
 result in undesired results when using \"bash\" as shell.
 
-The value t, the default value, unsets any setting of HISTFILE,
-and sets both HISTFILESIZE and HISTSIZE to 0.  If you set this
-variable to nil, however, the *override* is disabled, so the
-history will go to the default storage location,
-e.g. \"$HOME/.sh_history\"."
+The value t unsets any setting of HISTFILE, and sets both
+HISTFILESIZE and HISTSIZE to 0.  If you set this variable to nil,
+however, the *override* is disabled, so the history will go to
+the default storage location, e.g. \"$HOME/.sh_history\"."
   :group 'tramp
-  :version "25.1"
+  :version "25.2"
   :type '(choice (const :tag "Do not override HISTFILE" nil)
                  (const :tag "Unset HISTFILE" t)
                  (string :tag "Redirect to a file"))
@@ -519,6 +518,7 @@ The string is used in `tramp-methods'.")
 ;; FreeBSD: /usr/bin:/bin:/usr/sbin:/sbin: - beware trailing ":"!
 ;; Darwin: /usr/bin:/bin:/usr/sbin:/sbin
 ;; IRIX64: /usr/bin
+;; QNAP QTS: ---
 ;;;###tramp-autoload
 (defcustom tramp-remote-path
   '(tramp-default-remote-path "/bin" "/usr/bin" "/sbin" "/usr/sbin"
@@ -566,7 +566,7 @@ which might have been set in the init files like ~/.profile.
 Special handling is applied to the PATH environment, which should
 not be set here. Instead, it should be set via `tramp-remote-path'."
   :group 'tramp
-  :version "25.2"
+  :version "26.1"
   :type '(repeat string)
   :require 'tramp)
 
@@ -1027,6 +1027,7 @@ of command line.")
     (file-modes . tramp-handle-file-modes)
     (file-name-all-completions . tramp-sh-handle-file-name-all-completions)
     (file-name-as-directory . tramp-handle-file-name-as-directory)
+    (file-name-case-insensitive-p . tramp-handle-file-name-case-insensitive-p)
     (file-name-completion . tramp-handle-file-name-completion)
     (file-name-directory . tramp-handle-file-name-directory)
     (file-name-nondirectory . tramp-handle-file-name-nondirectory)
@@ -1145,7 +1146,9 @@ target of the symlink differ."
      (tramp-make-tramp-file-name
       method user host
       (with-tramp-file-property v localname "file-truename"
-	(let ((result nil))			; result steps in reverse order
+	(let ((result nil)			; result steps in reverse order
+	      (quoted (tramp-compat-file-name-quoted-p localname))
+	      (localname (tramp-compat-file-name-unquote localname)))
 	  (tramp-message v 4 "Finding true name for `%s'" filename)
 	  (cond
 	   ;; Use GNU readlink --canonicalize-missing where available.
@@ -1240,6 +1243,7 @@ target of the symlink differ."
 		(when (string= "" result)
 		  (setq result "/")))))
 
+	  (when quoted (setq result (tramp-compat-file-name-quote result)))
 	  (tramp-message v 4 "True name of `%s' is `%s'" localname result)
 	  result))))
 
@@ -1292,7 +1296,7 @@ target of the symlink differ."
 		 res-uid res-gid res-size res-symlink-target)
     (tramp-message vec 5 "file attributes with ls: %s" localname)
     ;; We cannot send all three commands combined, it could exceed
-    ;; NAME_MAX or PATH_MAX.  Happened on Mac OS X, for example.
+    ;; NAME_MAX or PATH_MAX.  Happened on macOS, for example.
     (when (or (tramp-send-command-and-check
                vec
                (format "%s %s"
@@ -1960,7 +1964,8 @@ tramp-sh-handle-file-name-all-completions: internal error accessing `%s': `%s'"
 		     "File %s already exists; make it a new name anyway? "
 		     newname)))
 	  (tramp-error
-	   v2 'file-error "add-name-to-file: file %s already exists" newname))
+	   v2 'file-already-exists
+	   "add-name-to-file: file %s already exists" newname))
 	(when ok-if-already-exists (setq ln (concat ln " -f")))
 	(tramp-flush-file-property v2 (file-name-directory v2-localname))
 	(tramp-flush-file-property v2 v2-localname)
@@ -2410,10 +2415,10 @@ The method used must be an out-of-band method."
 			'identity)
 		      (if t1
 			  (tramp-make-copy-program-file-name v)
-			(shell-quote-argument filename)))
+			(tramp-unquote-shell-quote-argument filename)))
 	      target (if t2
 			 (tramp-make-copy-program-file-name v)
-		       (shell-quote-argument newname)))
+		       (tramp-unquote-shell-quote-argument newname)))
 
 	;; Check for host and port number.  We cannot use
 	;; `tramp-file-name-port', because this returns also
@@ -3130,7 +3135,7 @@ the result will be a local, non-Tramp, file name."
   (with-parsed-tramp-file-name filename nil
     (unless (file-exists-p filename)
       (tramp-error
-       v 'file-error
+       v tramp-file-missing
        "Cannot make local copy of non-existing file `%s'" filename))
 
     (let* ((size (tramp-compat-file-attribute-size
@@ -3976,7 +3981,19 @@ file exists and nonzero exit status otherwise."
 		""))
 	    (tramp-shell-quote-argument tramp-end-of-output)
 	    shell (or extra-args ""))
-       t))
+       t)
+      ;; Check proper HISTFILE setting.  We give up when not working.
+      (when (and (stringp tramp-histfile-override)
+		 (file-name-directory tramp-histfile-override))
+	(tramp-barf-unless-okay
+	 vec
+	 (format
+	  "(cd %s)"
+	  (tramp-shell-quote-argument
+	   (file-name-directory tramp-histfile-override)))
+	 "`tramp-histfile-override' uses invalid file `%s'"
+	 tramp-histfile-override)))
+
     (tramp-set-connection-property
      (tramp-get-connection-process vec) "remote-shell" shell)))
 
@@ -4045,10 +4062,10 @@ process to set up.  VEC specifies the connection."
 	(case-fold-search t))
     (tramp-open-shell vec (tramp-get-method-parameter vec 'tramp-remote-shell))
 
-    ;; Disable tab and echo expansion.
+    ;; Disable echo expansion.
     (tramp-message vec 5 "Setting up remote shell environment")
     (tramp-send-command
-     vec "stty tab0 -inlcr -onlcr -echo kill '^U' erase '^H'" t)
+     vec "stty -inlcr -onlcr -echo kill '^U' erase '^H'" t)
     ;; Check whether the echo has really been disabled.  Some
     ;; implementations, like busybox of embedded GNU/Linux, don't
     ;; support disabling.
@@ -4065,7 +4082,8 @@ process to set up.  VEC specifies the connection."
   (tramp-message vec 5 "Setting shell prompt")
   (tramp-send-command
    vec (format "PS1=%s PS2='' PS3='' PROMPT_COMMAND=''"
-	       (tramp-shell-quote-argument tramp-end-of-output)) t)
+	       (tramp-shell-quote-argument tramp-end-of-output))
+   t)
 
   ;; Check whether the output of "uname -sr" has been changed.  If
   ;; yes, this is a strong indication that we must expire all
@@ -4073,138 +4091,132 @@ process to set up.  VEC specifies the connection."
   ;; `tramp-maybe-open-connection', it will be caught there.
   (tramp-message vec 5 "Checking system information")
   (let ((old-uname (tramp-get-connection-property vec "uname" nil))
-	(new-uname
+	(uname
 	 (tramp-set-connection-property
 	  vec "uname"
 	  (tramp-send-command-and-read vec "echo \\\"`uname -sr`\\\""))))
-    (when (and (stringp old-uname) (not (string-equal old-uname new-uname)))
+    (when (and (stringp old-uname) (not (string-equal old-uname uname)))
       (tramp-message
        vec 3
        "Connection reset, because remote host changed from `%s' to `%s'"
-       old-uname new-uname)
+       old-uname uname)
       ;; We want to keep the password.
       (tramp-cleanup-connection vec t t)
-      (throw 'uname-changed (tramp-maybe-open-connection vec))))
+      (throw 'uname-changed (tramp-maybe-open-connection vec)))
 
-  ;; Try to set up the coding system correctly.
-  ;; CCC this can't be the right way to do it.  Hm.
-  (tramp-message vec 5 "Determining coding system")
-  (with-current-buffer (process-buffer proc)
-    ;; Use MULE to select the right EOL convention for communicating
-    ;; with the process.
-    (let ((cs (or (and (memq 'utf-8 (coding-system-list))
-		       (string-match "utf-?8" (tramp-get-remote-locale vec))
-		       (cons 'utf-8 'utf-8))
-		  (process-coding-system proc)
-		  (cons 'undecided 'undecided)))
-	  cs-decode cs-encode)
-      (when (symbolp cs) (setq cs (cons cs cs)))
-      (setq cs-decode (or (car cs) 'undecided)
-	    cs-encode (or (cdr cs) 'undecided)
-	    cs-encode
-	    (coding-system-change-eol-conversion
-	     cs-encode
-	     (if (string-match
-		  "^Darwin" (tramp-get-connection-property vec "uname" ""))
-		 'mac 'unix)))
-      (tramp-send-command vec "echo foo ; echo bar" t)
-      (goto-char (point-min))
-      (when (search-forward "\r" nil t)
-	(setq cs-decode (coding-system-change-eol-conversion cs-decode 'dos)))
-      ;; Special setting for Mac OS X.
-      (when (and (string-match
-		  "^Darwin" (tramp-get-connection-property vec "uname" ""))
-		 (memq 'utf-8-hfs (coding-system-list)))
-	(setq cs-decode 'utf-8-hfs
-	      cs-encode 'utf-8-hfs))
-      (set-buffer-process-coding-system cs-decode cs-encode)
-      (tramp-message
-       vec 5 "Setting coding system to `%s' and `%s'" cs-decode cs-encode)))
+    ;; Try to set up the coding system correctly.
+    ;; CCC this can't be the right way to do it.  Hm.
+    (tramp-message vec 5 "Determining coding system")
+    (with-current-buffer (process-buffer proc)
+      ;; Use MULE to select the right EOL convention for communicating
+      ;; with the process.
+      (let ((cs (or (and (memq 'utf-8 (coding-system-list))
+			 (string-match "utf-?8" (tramp-get-remote-locale vec))
+			 (cons 'utf-8 'utf-8))
+		    (process-coding-system proc)
+		    (cons 'undecided 'undecided)))
+	    cs-decode cs-encode)
+	(when (symbolp cs) (setq cs (cons cs cs)))
+	(setq cs-decode (or (car cs) 'undecided)
+	      cs-encode (or (cdr cs) 'undecided)
+	      cs-encode
+	      (coding-system-change-eol-conversion
+	       cs-encode (if (string-match "^Darwin" uname) 'mac 'unix)))
+	(tramp-send-command vec "echo foo ; echo bar" t)
+	(goto-char (point-min))
+	(when (search-forward "\r" nil t)
+	  (setq cs-decode (coding-system-change-eol-conversion cs-decode 'dos)))
+	;; Special setting for macOS.
+	(when (and (string-match "^Darwin" uname)
+		   (memq 'utf-8-hfs (coding-system-list)))
+	  (setq cs-decode 'utf-8-hfs
+		cs-encode 'utf-8-hfs))
+	(set-buffer-process-coding-system cs-decode cs-encode)
+	(tramp-message
+	 vec 5 "Setting coding system to `%s' and `%s'" cs-decode cs-encode)))
 
-  (tramp-send-command vec "set +o vi +o emacs" t)
+    (tramp-send-command vec "set +o vi +o emacs" t)
 
-  ;; Check whether the remote host suffers from buggy
-  ;; `send-process-string'.  This is known for FreeBSD (see comment in
-  ;; `send_process', file process.c).  I've tested sending 624 bytes
-  ;; successfully, sending 625 bytes failed.  Emacs makes a hack when
-  ;; this host type is detected locally.  It cannot handle remote
-  ;; hosts, though.
-  (with-tramp-connection-property proc "chunksize"
-    (cond
-     ((and (integerp tramp-chunksize) (> tramp-chunksize 0))
-      tramp-chunksize)
-     (t
-      (tramp-message
-       vec 5 "Checking remote host type for `send-process-string' bug")
-      (if (string-match
-	   "^FreeBSD" (tramp-get-connection-property vec "uname" ""))
-	  500 0))))
+    ;; Check whether the remote host suffers from buggy
+    ;; `send-process-string'.  This is known for FreeBSD (see comment
+    ;; in `send_process', file process.c).  I've tested sending 624
+    ;; bytes successfully, sending 625 bytes failed.  Emacs makes a
+    ;; hack when this host type is detected locally.  It cannot handle
+    ;; remote hosts, though.
+    (with-tramp-connection-property proc "chunksize"
+      (cond
+       ((and (integerp tramp-chunksize) (> tramp-chunksize 0))
+	tramp-chunksize)
+       (t
+	(tramp-message
+	 vec 5 "Checking remote host type for `send-process-string' bug")
+	(if (string-match "^FreeBSD" uname) 500 0))))
 
-  ;; Set remote PATH variable.
-  (tramp-set-remote-path vec)
+    ;; Set remote PATH variable.
+    (tramp-set-remote-path vec)
 
-  ;; Search for a good shell before searching for a command which
-  ;; checks if a file exists.  This is done because Tramp wants to use
-  ;; "test foo; echo $?" to check if various conditions hold, and
-  ;; there are buggy /bin/sh implementations which don't execute the
-  ;; "echo $?"  part if the "test" part has an error.  In particular,
-  ;; the OpenSolaris /bin/sh is a problem.  There are also other
-  ;; problems with /bin/sh of OpenSolaris, like redirection of stderr
-  ;; in function declarations, or changing HISTFILE in place.
-  ;; Therefore, OpenSolaris' /bin/sh is replaced by bash, when
-  ;; detected.
-  (tramp-find-shell vec)
+    ;; Search for a good shell before searching for a command which
+    ;; checks if a file exists.  This is done because Tramp wants to
+    ;; use "test foo; echo $?" to check if various conditions hold,
+    ;; and there are buggy /bin/sh implementations which don't execute
+    ;; the "echo $?"  part if the "test" part has an error.  In
+    ;; particular, the OpenSolaris /bin/sh is a problem.  There are
+    ;; also other problems with /bin/sh of OpenSolaris, like
+    ;; redirection of stderr in function declarations, or changing
+    ;; HISTFILE in place.  Therefore, OpenSolaris' /bin/sh is replaced
+    ;; by bash, when detected.
+    (tramp-find-shell vec)
 
-  ;; Disable unexpected output.
-  (tramp-send-command vec "mesg n 2>/dev/null; biff n 2>/dev/null" t)
+    ;; Disable unexpected output.
+    (tramp-send-command vec "mesg n 2>/dev/null; biff n 2>/dev/null" t)
 
-  ;; IRIX64 bash expands "!" even when in single quotes.  This
-  ;; destroys our shell functions, we must disable it.  See
-  ;; <http://stackoverflow.com/questions/3291692/irix-bash-shell-expands-expression-in-single-quotes-yet-shouldnt>.
-  (when (string-match "^IRIX64" (tramp-get-connection-property vec "uname" ""))
-    (tramp-send-command vec "set +H" t))
+    ;; IRIX64 bash expands "!" even when in single quotes.  This
+    ;; destroys our shell functions, we must disable it.  See
+    ;; <http://stackoverflow.com/questions/3291692/irix-bash-shell-expands-expression-in-single-quotes-yet-shouldnt>.
+    (when (string-match "^IRIX64" uname)
+      (tramp-send-command vec "set +H" t))
 
-  ;; On BSD-like systems, ?\t is expanded to spaces.  Suppress this.
-  (when (string-match "BSD\\|Darwin"
-		      (tramp-get-connection-property vec "uname" ""))
-    (tramp-send-command vec "stty -oxtabs" t))
+    ;; Disable tab expansion.
+    (if (string-match "BSD\\|Darwin" uname)
+	(tramp-send-command vec "stty tabs" t)
+      (tramp-send-command vec "stty tab0" t))
 
-  ;; Set utf8 encoding.  Needed for Mac OS X, for example.  This is
-  ;; non-POSIX, so we must expect errors on some systems.
-  (tramp-send-command vec "stty iutf8 2>/dev/null" t)
+    ;; Set utf8 encoding.  Needed for macOS, for example.  This is
+    ;; non-POSIX, so we must expect errors on some systems.
+    (tramp-send-command vec "stty iutf8 2>/dev/null" t)
 
-  ;; Set `remote-tty' process property.
-  (let ((tty (tramp-send-command-and-read vec "echo \\\"`tty`\\\"" 'noerror)))
-    (unless (zerop (length tty))
-      (process-put proc 'remote-tty tty)))
+    ;; Set `remote-tty' process property.
+    (let ((tty (tramp-send-command-and-read vec "echo \\\"`tty`\\\"" 'noerror)))
+      (unless (zerop (length tty))
+	(process-put proc 'remote-tty tty)))
 
-  ;; Dump stty settings in the traces.
-  (when (>= tramp-verbose 9)
-    (tramp-send-command vec "stty -a" t))
+    ;; Dump stty settings in the traces.
+    (when (>= tramp-verbose 9)
+      (tramp-send-command vec "stty -a" t))
 
-  ;; Set the environment.
-  (tramp-message vec 5 "Setting default environment")
+    ;; Set the environment.
+    (tramp-message vec 5 "Setting default environment")
 
-  (let (unset vars)
-    (dolist (item (reverse
-		   (append `(,(tramp-get-remote-locale vec))
-			   (copy-sequence tramp-remote-process-environment))))
-      (setq item (split-string item "=" 'omit))
-      (setcdr item (mapconcat 'identity (cdr item) "="))
-      (if (and (stringp (cdr item)) (not (string-equal (cdr item) "")))
-	  (push (format "%s %s" (car item) (cdr item)) vars)
-	(push (car item) unset)))
-    (when vars
-      (tramp-send-command
-       vec
-       (format "while read var val; do export $var=$val; done <<'%s'\n%s\n%s"
-	       tramp-end-of-heredoc
-	       (mapconcat 'identity vars "\n")
-	       tramp-end-of-heredoc)
-       t))
-    (when unset
-      (tramp-send-command
-       vec (format "unset %s" (mapconcat 'identity unset " ")) t))))
+    (let (unset vars)
+      (dolist (item (reverse
+		     (append `(,(tramp-get-remote-locale vec))
+			     (copy-sequence tramp-remote-process-environment))))
+	(setq item (split-string item "=" 'omit))
+	(setcdr item (mapconcat 'identity (cdr item) "="))
+	(if (and (stringp (cdr item)) (not (string-equal (cdr item) "")))
+	    (push (format "%s %s" (car item) (cdr item)) vars)
+	  (push (car item) unset)))
+      (when vars
+	(tramp-send-command
+	 vec
+	 (format "while read var val; do export $var=$val; done <<'%s'\n%s\n%s"
+		 tramp-end-of-heredoc
+		 (mapconcat 'identity vars "\n")
+		 tramp-end-of-heredoc)
+	 t))
+      (when unset
+	(tramp-send-command
+	 vec (format "unset %s" (mapconcat 'identity unset " ")) t)))))
 
 ;; Old text from documentation of tramp-methods:
 ;; Using a uuencode/uudecode inline method is discouraged, please use one
@@ -4911,16 +4923,18 @@ connection if a previous connection has died for some reason."
 		  (setq options ""
 			target-alist (cdr target-alist)))
 
+		;; Set connection-local variables.
+		(tramp-set-connection-local-variables vec)
+
 		;; Make initial shell settings.
 		(tramp-open-connection-setup-interactive-shell p vec)
 
 		;; Mark it as connected.
 		(tramp-set-connection-property p "connected" t)))))
 
-      ;; When the user did interrupt, we must cleanup.
-      (quit
+      ;; Cleanup, and propagate the signal.
+      ((error quit)
        (tramp-cleanup-connection vec t)
-       ;; Propagate the quit signal.
        (signal (car err) (cdr err))))))
 
 (defun tramp-send-command (vec command &optional neveropen nooutput)
@@ -5152,7 +5166,8 @@ Return ATTR."
   (let ((method (tramp-file-name-method vec))
 	(user (tramp-file-name-user vec))
 	(host (tramp-file-name-real-host vec))
-	(localname (directory-file-name (tramp-file-name-localname vec))))
+	(localname (tramp-compat-file-name-unquote
+		    (directory-file-name (tramp-file-name-localname vec)))))
     (when (string-match tramp-ipv6-regexp host)
       (setq host (format "[%s]" host)))
     (unless (string-match "ftp$" method)
@@ -5161,8 +5176,8 @@ Return ATTR."
      ((tramp-get-method-parameter vec 'tramp-remote-copy-program)
       localname)
      ((not (zerop (length user)))
-      (shell-quote-argument (format "%s@%s:%s" user host localname)))
-     (t (shell-quote-argument (format "%s:%s" host localname))))))
+      (tramp-shell-quote-argument (format "%s@%s:%s" user host localname)))
+     (t (tramp-shell-quote-argument (format "%s:%s" host localname))))))
 
 (defun tramp-method-out-of-band-p (vec size)
   "Return t if this is an out-of-band method, nil otherwise."
