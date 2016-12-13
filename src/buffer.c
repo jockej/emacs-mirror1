@@ -4185,7 +4185,7 @@ add_overlay_mod_hooklist (Lisp_Object functionlist, Lisp_Object overlay)
   ASET (last_overlay_modification_hooks, last_overlay_modification_hooks_used,
 	overlay);      last_overlay_modification_hooks_used++;
 }
-#if OVERLAYS_FIX
+/* #if OVERLAYS_FIX */
 static void
 gather_overlay_mod_hooks (struct Lisp_Overlay *tree, ptrdiff_t beg,
                           ptrdiff_t end, bool insertion)
@@ -4206,13 +4206,34 @@ gather_overlay_mod_hooks (struct Lisp_Overlay *tree, ptrdiff_t beg,
     }
   if (insertion)
     {
-      if (tree->char_start ==
+      if (tree->char_start == beg || tree->char_start == end)
+        {
+          prop = lookup_char_property (tree->plist,
+                                       Qinsert_in_front_hooks, 0);
+          if (! NILP (prop))
+            {
+              XSETMISC (overlay, tree);
+              add_overlay_mod_hooklist (prop, overlay);
+            }
+        }
+      if (tree->char_end == beg || tree->char_end == end)
+        {
+          prop = lookup_char_property (tree->plist,
+                                       Qinsert_behind_hooks, 0);
+          if (! NILP (prop))
+            {
+              XSETMISC (overlay, tree);
+              add_overlay_mod_hooklist (prop, overlay);
+            }
+        }
 
+    }
+  if (tree->char_start <= end)
+    gather_overlay_mod_hooks (tree->right, beg, end, insertion);
+  gather_overlay_mod_hooks (tree->left, beg, end, insertion);
 
-
-          }
 }
-#endif
+/* #endif */
 
 /* Run the modification-hooks of overlays that include
    any part of the text in START to END.
@@ -4232,13 +4253,13 @@ void
 report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
 			     Lisp_Object arg1, Lisp_Object arg2, Lisp_Object arg3)
 {
-  Lisp_Object prop, overlay;
-  struct Lisp_Overlay *tail;
+  /* Lisp_Object prop, overlay; */
+  /* struct Lisp_Overlay *tail; */
   /* True if this change is an insertion.  */
   bool insertion = (after ? XFASTINT (arg3) == 0 : EQ (start, end));
 
-  overlay = Qnil;
-  tail = NULL;
+  /* overlay = Qnil; */
+  /* tail = NULL; */
 
   /* We used to run the functions as soon as we found them and only register
      them in last_overlay_modification_hooks for the purpose of the `after'
@@ -4328,9 +4349,13 @@ report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
 		add_overlay_mod_hooklist (prop, overlay);
 	    }
 	}
-      //#endif
-    }
 
+#endif
+      gather_overlay_mod_hooks (current_buffer->overlays_root,
+                                XFASTINT (start), XFASTINT (end),
+                                insertion);
+    }
+  {
     /* Call the functions recorded in last_overlay_modification_hooks.
        First copy the vector contents, in case some of these hooks
        do subsequent modification of the buffer.  */
@@ -4351,7 +4376,8 @@ report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
 	   function is never called to record the overlay modification
 	   hook functions in the last_overlay_modification_hooks
 	   array, so anything we find there is not ours.  */
-	if (XMARKER (OVERLAY_START (ovl))->buffer != current_buffer)
+	/* if (XMARKER (OVERLAY_START (ovl))->buffer != current_buffer) */
+        if (XBUFFER (XOVERLAY (ovl)->buf) != current_buffer)
 	  return;
       }
 
@@ -4370,9 +4396,8 @@ report_overlay_modification (Lisp_Object start, Lisp_Object end, bool after,
       }
 
     SAFE_FREE ();
-#endif
+/* #endif */
   }
-
 }
 
 static void

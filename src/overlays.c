@@ -69,6 +69,8 @@ struct Lisp_Overlay OVERLAY_SENTINEL_NODE =
     .left = &OVERLAY_SENTINEL_NODE,     /* left */
     .right = &OVERLAY_SENTINEL_NODE,    /* right */
     .level = 0,                          /* level */
+    .char_start = 0,
+    .char_end = 0
     /* .parent = 0 */
   };
 
@@ -772,7 +774,7 @@ adjust_pos_for_delete (ptrdiff_t *charpos, ptrdiff_t from_char,
 {
   if (*charpos > to_char)
     {
-      *charpos = to_char - from_char;
+      *charpos -= to_char - from_char;
     }
   else if (*charpos > from_char)
     {
