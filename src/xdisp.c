@@ -5844,7 +5844,7 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
                             charpos, it->w, &overlay_vec_size,
                             &overlay_vec, &noverlays);
 
-  for (ptrdiff_t i = 0; i < n; i++)
+  for (ptrdiff_t i = 0; i < noverlays; i++)
     {
       overlay = overlay_vec[i];
       ptrdiff_t start = XOVERLAY (overlay)->char_start;
@@ -5901,7 +5901,7 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
 static bool
 get_overlay_strings_1 (struct it *it, ptrdiff_t charpos, bool compute_stop_p)
 {
-#ifdef OVERLAYS_FIX
+/* #ifdef OVERLAYS_FIX */
   /* Get the first OVERLAY_STRING_CHUNK_SIZE overlay strings to
      process.  This fills IT->overlay_strings with strings, and sets
      IT->n_overlay_strings to the total number of strings to process.
@@ -5977,7 +5977,7 @@ get_overlay_strings_1 (struct it *it, ptrdiff_t charpos, bool compute_stop_p)
 	}
       return true;
     }
-#endif
+/* #endif */
   it->current.overlay_string_index = -1;
   return false;
 }

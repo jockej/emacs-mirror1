@@ -1862,7 +1862,7 @@ del_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
   /* Relocate all markers pointing into the new, larger gap to point
      at the end of the text before the gap.  */
   adjust_markers_for_delete (from, from_byte, to, to_byte);
-  overlay_tree_adjust_for_delete(current_buffer->overlays_root, from, to);
+  overlay_tree_adjust_for_delete(&current_buffer->overlays_root, from, to);
 
   MODIFF++;
   CHARS_MODIFF = MODIFF;

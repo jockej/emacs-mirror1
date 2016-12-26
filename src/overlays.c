@@ -1,5 +1,5 @@
 /*
-n * Copyright (C) 2016  Joakim Jalap
+ * Copyright (C) 2016  Joakim Jalap
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,12 +21,13 @@ n * Copyright (C) 2016  Joakim Jalap
    interval bound which appears in the subtree rooted in the node.
 
    The implementation of the tree functions is written as closely as
-   possible to the one presented in Anderssons paper (REF)[1], but with a
-   few differences.  The code in [1] is written in Pascal, which has
-   proper pass by reference. Unfortunately C doesn't really have this;
-   this is the reason for passing around pointers to pointers.
+   possible to the one presented in Anderssons paper (REF)[1], but
+   with a few differences.  The code in [1] is written in Pascal,
+   which has proper pass by reference. Unfortunately C doesn't really
+   have this, so it has to be emulated.  This is the reason for
+   passing around pointers to pointers all the time.
 
-   Also this tree has parent references, and the code in the delete
+   Also the code in the delete
    routine is a bit more complicated because we need to delete the
    actual memory area, so as to not trip up the GC.
 
@@ -92,6 +93,8 @@ overlay_lt (struct Lisp_Overlay *a, struct Lisp_Overlay *b)
   else if (a->char_end > b->char_end)
     return false;
   else
+    /* These are 'the same', so arbitrarily order by
+       memory address.  */
     return a < b;
 }
 
@@ -114,6 +117,10 @@ check_valid_aa_tree (struct Lisp_Overlay *root)
   /* At most one link on same level */
   eassert (root->right->right->level < root->level);
 
+  eassert ((root->right == OVERLAY_SENTINEL) ||
+           (! overlay_lt (root->right, root)));
+  eassert ((root->left == OVERLAY_SENTINEL) ||
+           (overlay_lt (root->left, root)));
   /* Check we don't have ourselves as a child */
   eassert (root->left != root && root->right != root);
 
@@ -121,6 +128,10 @@ check_valid_aa_tree (struct Lisp_Overlay *root)
   eassert (root->max >= root->left->max &&
            root->max >= root->right->max &&
            root->max >= root->char_end);
+  eassert (root->max == root->left->max ||
+           root->max == root->right->max ||
+           root->max == root->char_end);
+
   /* Check subtrees */
   check_valid_aa_tree (root->left);
   check_valid_aa_tree (root->right);
@@ -183,9 +194,21 @@ print_tree(struct Lisp_Overlay *tree, unsigned level)
       printf("nil\n");
       return;
     }
-  printf("%li to %li\n", tree->char_start, tree->char_end);
+  printf("%li to %li, max=%li, lvl=%u, %p\n", tree->char_start, tree->char_end,
+         tree->max, tree->level, tree);
   print_tree(tree->right, level + 2);
   print_tree(tree->left, level + 2);
+}
+
+bool
+overlay_tree_mem_p (struct Lisp_Overlay *tree, struct Lisp_Overlay *t)
+{
+  if (tree == OVERLAY_SENTINEL)
+    return false;
+  if (tree == t)
+    return true;
+  return overlay_tree_mem_p (tree->left, t)
+    || overlay_tree_mem_p (tree->right, t);
 }
 
 /* Insert NODE in TREE.  On the way up after the insertion, adjust the
@@ -242,6 +265,112 @@ overlay_tree_insert (struct Lisp_Overlay **tree,
   CHECK_TREE (*tree);
 }
 
+static void
+find_pred (struct Lisp_Overlay *node, struct Lisp_Overlay **pred,
+           struct Lisp_Overlay **pred_parent)
+{
+  struct Lisp_Overlay *pre = node->left;
+  struct Lisp_Overlay *parent = node;
+  while (pre->right != OVERLAY_SENTINEL)
+    {
+      parent = pre;
+      pre = pre->right;
+    }
+  *pred = pre;
+  *pred_parent= parent;
+}
+
+static void
+find_succ (struct Lisp_Overlay *node, struct Lisp_Overlay **succ,
+           struct Lisp_Overlay **succ_parent)
+{
+  struct Lisp_Overlay *succ1 = node->right;
+  struct Lisp_Overlay *parent = node;
+  while (succ1->left != OVERLAY_SENTINEL)
+    {
+      parent = succ1;
+      succ1 = succ1->left;
+    }
+  *succ = succ1;
+  *succ_parent= parent;
+}
+
+/* Maybe replace NODE with its immediate predecessor/successor
+   depending on the value of PREV.  If PREV is true, it's the
+   predecessor, otherwise the  successor.
+
+   This is needed since we use the address as compnent to determine
+   where a struct Lisp_Overlay goes in the tree (see 'overlay_lt') but
+   the primary elements to order by are 'char_start' and 'char_end'.
+   These can however change e.g. because of a delete.  Then, since the
+   address of each overlay is arbitrary, they can wind up in the wrong
+   order, which ruins the tree.
+
+   Example:
+   We have an overlay (A) from 4 to 4, with address a, and an overlay (B) from
+   5 to 5 with address b, and b < a. Now if we delete the character at
+   5, the second overlay will also be from 4 to 4 but it is still to
+   the right of A. Since b < a this is incorrect! So what we do in
+   this subroutine is we simply swap A and B, so that they are in the
+   correct order considering their addresses.
+
+   This can only be relevant between a node and its immediate
+   predecessor/successor, and I /think/ only when they are of length 0.
+*/
+static void
+maybe_replace_by_next (struct Lisp_Overlay **node, bool prev)
+{
+  struct Lisp_Overlay *repl, *repl_parent;
+  struct Lisp_Overlay *t = *node;
+  if (prev)
+    find_pred (t, &repl, &repl_parent);
+  else
+    find_succ (t, &repl, &repl_parent);
+  if (repl != OVERLAY_SENTINEL)
+    {
+      if (repl->char_start == t->char_start
+          && repl->char_end == t->char_end
+          && (prev ? repl > t: repl < t))
+        {
+          /* printf("ALERT! repl (%p) would be %c t (%p)!\n", */
+                 /* repl, prev ? '>' : '<', t); */
+          struct Lisp_Overlay *tmp;
+          unsigned utmp;
+          tmp = t->left;
+          t->left = repl->left;
+          if (tmp != repl)
+            repl->left = tmp;
+          else
+            repl->left = t;
+          tmp = t->right;
+          t->right = repl->right;
+          if (tmp != repl)
+            repl->right = tmp;
+          else
+            repl->right = t;
+          utmp = t->level;
+          t->level = repl->level;
+          repl->level = utmp;
+          repl->max = t->max;
+          t->max = overlay_find_max(t);
+          if (repl == repl_parent->left)
+            {
+              repl_parent->left = t;
+              /* printf("repl (%p) is left child of repl_parent (%p)\n", */
+                     /* repl, repl_parent); */
+            }
+          else if (repl == repl_parent->right)
+            {
+              repl_parent->right = t;
+              /* printf("repl (%p) is right child of repl_parent (%p)\n", */
+                     /* repl, repl_parent); */
+            }
+          *node = repl;
+          /* eassert (false); */
+        }
+    }
+}
+
 /* Delete NODE from TREE.  */
 void
 overlay_tree_delete (struct Lisp_Overlay **tree,
@@ -278,85 +407,44 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
       deleted != OVERLAY_SENTINEL &&
       node == deleted)
     {
-      /* printf("Deleted overlay from %ld to %ld at addr: %p with level %u and parent %p\n", */
-             /* deleted->char_start, deleted->char_end, deleted, */
-             /* deleted->level, deleteds_parent); */
-      /* if (last == deleted) printf("It was a leaf\n"); */
-
-      if (last != deleted)
-        {
-          eassert (deleted->left != last);
-          /* printf("put last (%p), which had level %u, at level %u, like deleted (%p)\n", */
-                 /* last, last->level, deleted->level, deleted); */
-          last->level = deleted->level;
-          last->left = deleted->left;
-
-          if (deleted->right == last)
-            ;            /* last->right = OVERLAY_SENTINEL; */
-          else
-            {
-              eassert (last->right->level <= last->level);
-              last->right = deleted->right;
-              eassert (last->right->level <= last->level);
-            }
-        }
-
-      if (!parent)
-        {
-          /* printf("deleted (%p) had NULL parent, setting it's buffer's root to OVERLAY_SENTINEL\n", deleted); */
-          XBUFFER (deleted->buf)->overlays_root = OVERLAY_SENTINEL;
-        }
-
-      deleted->buf = Qnil;
-      //deleted->right = OVERLAY_SENTINEL;
-      //deleted->left = OVERLAY_SENTINEL;
-      deleted->deleted = 1;
-    }
-  else
-    {
-      /* printf("going up: %li to %li\n", t->char_start, t->char_end); */
+      /* printf("Deleted overlay from %ld to %ld at addr: %p with \n"\ */
+             /* "last: %p, lasts_parent: %p, deleteds_parent: %p\n", */
+             /* deleted->char_start, deleted->char_end, deleted, last, */
+             /* lasts_parent, deleteds_parent); */
       /* PRINT_TREE(current_buffer->overlays_root); */
-      if (t == lasts_parent)
-        {
-          if (t->left == last)
-            {
-              /* printf("last was left child of t (%p), putting OVERLAY_SENTINEL as child at %p (before tree is %p)\n", t, &t->left, tree); */
-              eassert (t == lasts_parent || lasts_parent == deleted);
-              t->left = OVERLAY_SENTINEL;
-              /* printf("tree is now %p\n", tree); */
-            }
-          else if (t->right == last)
-            {
-              /* printf("last was right child of t (%p), putting OVERLAY_SENTINEL as child at %p (before tree is %p)\n", t, &t->right, tree); */
-              eassert (t == lasts_parent || lasts_parent == deleted);
-              t->right = OVERLAY_SENTINEL;
-              /* printf("tree is now %p\n", tree); */
-            }
-        }
-
-      if (t->left == deleted)
-        {
-          /* printf("deleted was left child of t (%p), putting last (%p) as child\n", t, last); */
-          eassert (t == deleteds_parent);
-          t->left = last;
-        }
-      else if (t->right == deleted)
-        {
-          /* printf("deleted was right child of t (%p), putting last (%p) as child\n", t, last); */
-          eassert (t == deleteds_parent);
-          t->right = last;
-        }
-
+      deleted->deleted = 1;
+      /* printf("*tree=%p, t=%p, t->right=%p\n", *tree, t, t->right); */
+      *tree = t->right;
+      /* printf("*tree=%p, t=%p, t->right=%p\n", *tree, t, t->right); */
+    }
+  else /* We have are now going up the stack after removing LAST from
+          the tree.  */
+    {
       if (t == deleted)
         {
           /* printf("Hit deleted (%p) on the way up!\n", deleted); */
-          /* printf("Replacing deleted with last\n"); */
+          /* printf("last (%p): left=%p, right=%p, lvl=%u, deleted (%p): left=%p, right=%p, lvl=%u\n", */
+                 /* last, last->left, last->right, last->level, deleted, */
+                 /* deleted->left, deleted->right, deleted->level); */
+          last->level = deleted->level;
+          last->left = deleted->left;
+          last->right = deleted->right;
+          /* printf("before putting last\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
+
           t = *tree = last;
+          struct Lisp_Overlay *a = *tree;
+          maybe_replace_by_next (tree, true);
+          if (*tree != a)
+            {
+              /* printf("Swapped out %p and %p in delete!\n", a, *tree); */
+            }
+          deleted->left = deleted->right = OVERLAY_SENTINEL;
+          deleted->buf = Qnil;
+          /* printf("after putting last:\n"); */
+          /* PRINT_TREE(current_buffer->overlays_root); */
         }
 
-      /* printf("going up: before lowering: %li to %li\n", t->char_start, t->char_end); */
-      /* PRINT_TREE(current_buffer->overlays_root); */
-      /* printf("Going up, at %p which has level %u\n", t, t->level); */
       /* Adjust all max fields along the path up.  */
       t->max = overlay_find_max(t);
       if (t->left->level < t->level - 1
@@ -371,53 +459,10 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
           /* Andersson leaves it as 'an exercise for the reader' to
              prove that these rebalancing operations are enough.
              Don't you just love when that happens?  */
-          /* struct Lisp_Overlay *c; */
-          /* c = *tree; */
-          /* printf("delete: t=%p, *tree=%p\n", t, *tree); */
-          /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */
-                 /* c->right->level, c->right->right->level); */
-          /* eassert (c->level >= c->right->level && */
-                   /* c->level >= c->left->level); */
-          /* printf("before first skew:\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
           overlay_skew (tree);
-          /* printf("after first skew:\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
-
-          /* c = (*tree)->right; */
-          /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */
-                 /* c->right->level, c->right->right->level); */
-          /* eassert (c->level >= c->right->level && */
-                   /* c->level >= c->left->level); */
-          /* printf("before 2nd skew:\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
           overlay_skew (&(*tree)->right);
-          /* printf("after 2nd skew:\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
-
-          /* c = (*tree)->right->right; */
-          /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */
-                 /* c->right->level, c->right->right->level); */
-          /* eassert (c->level >= c->right->level && */
-                   /* c->level >= c->left->level); */
-          /* printf("before 3rd skew:\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
           overlay_skew (&(*tree)->right->right);
-          /* printf("after 3rd skew:\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
-
-          /* c = *tree; */
-          /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */
-                 /* c->right->level, c->right->right->level); */
-          /* eassert (c->level >= c->left->level && */
-                   /* c->level >= c->right->level); */
           overlay_split (tree);
-
-          /* c = (*tree)->right; */
-          /* printf("c=%u, c->r=%u, c->r->r=%u\n", c->level, */
-                 /* c->right->level, c->right->right->level); */
-          /* eassert (c->level >= c->right->level && */
-                   /* c->level >= c->right->level); */
           overlay_split (&(*tree)->right);
         }
     }
@@ -481,14 +526,17 @@ overlay_tree_endpoint_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
                           struct window *w, ptrdiff_t *vec_size,
                           Lisp_Object **vec_ptr, ptrdiff_t *idx)
 {
+  Lisp_Object win;
   CHECK_TREE (tree);
   if (tree == OVERLAY_SENTINEL || tree->max < pos)
     return;
 
   if (tree->char_start == pos || tree->char_end == pos)
     {
-      Lisp_Object win =  lookup_char_property (tree->plist, Qwindow, 0);
-      if (WINDOWP (win) && XWINDOW (win) == w)
+      Lisp_Object overlay;
+      XSETMISC (overlay, tree);
+      win = Foverlay_get (overlay, Qwindow);
+      if (! WINDOWP (win) || XWINDOW (win) == w)
         {
           add_to_vec (tree, vec_ptr, vec_size, idx);
         }
@@ -784,24 +832,40 @@ adjust_pos_for_delete (ptrdiff_t *charpos, ptrdiff_t from_char,
 
 /* Adjust TREE for a delete from FROM_CHAR to TO_CHAR.  */
 ptrdiff_t
-overlay_tree_adjust_for_delete (struct Lisp_Overlay *tree,
+overlay_tree_adjust_for_delete (struct Lisp_Overlay **tree,
                                 ptrdiff_t from_char,
                                 ptrdiff_t to_char)
 {
-  if (tree == OVERLAY_SENTINEL || tree->max < from_char)
-    return tree->max;
+  struct Lisp_Overlay *t = *tree;
+  if (t == OVERLAY_SENTINEL || t->max < from_char)
+    return t->max;
 
-  adjust_pos_for_delete(&tree->char_start, from_char, to_char);
-  adjust_pos_for_delete(&tree->char_end, from_char, to_char);
+  adjust_pos_for_delete(&t->char_start, from_char, to_char);
+  adjust_pos_for_delete(&t->char_end, from_char, to_char);
 
-  eassert (tree->char_start <= tree->char_end);
+  eassert (t->char_start <= t->char_end);
   ptrdiff_t r, l;
 
-  l = overlay_tree_adjust_for_delete(tree->left, from_char, to_char);
-  r = overlay_tree_adjust_for_delete(tree->right, from_char, to_char);
+  l = overlay_tree_adjust_for_delete(&t->left, from_char, to_char);
+  r = overlay_tree_adjust_for_delete(&t->right, from_char, to_char);
 
-  tree->max = overlay_max(l, r, tree->char_end);
-  return tree->max;
+  /* t->max = overlay_max(l, r, t->char_end); */
+  t->max = overlay_find_max (t);
+
+  if (t->char_start == from_char
+      && t->char_end == from_char)
+    {
+      struct Lisp_Overlay *a = *tree;
+      maybe_replace_by_next (tree, true);
+      maybe_replace_by_next (tree, false);
+      if (*tree != a)
+        {
+          /* printf("Swapped %p and %p in otafd!\n", *tree, a); */
+        }
+    }
+
+
+  return t->max;
 }
 
 /* Adjust CHARPOS and BYTEPOS for a replace from FROM_CHAR to TO_CHAR.

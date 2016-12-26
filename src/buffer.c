@@ -3753,6 +3753,9 @@ modify_overlay (struct buffer *buf, ptrdiff_t start, ptrdiff_t end)
   ++BUF_OVERLAY_MODIFF (buf);
 }
 
+extern bool
+overlay_tree_mem_p (struct Lisp_Overlay *tree, struct Lisp_Overlay *t);
+
 DEFUN ("move-overlay", Fmove_overlay, Smove_overlay, 3, 4, 0,
        doc: /* Set the endpoints of OVERLAY to BEG and END in BUFFER.
 If BUFFER is omitted, leave OVERLAY in the same buffer it inhabits now.
@@ -3803,10 +3806,16 @@ buffer.  */)
 
       old_start = XOVERLAY (overlay)->char_start;
       old_end = XOVERLAY (overlay)->char_end;
-      /* printf("Deleteing overlay at %p in move\n", XOVERLAY (OVERLAY)); */
+      /* printf("Deleteing overlay at %p in move\n", */
+             /* XOVERLAY (overlay)); */
       CHECK_TREE (ob->overlays_root);
-      overlay_tree_delete(&ob->overlays_root, XOVERLAY (overlay), NULL);
+      /* PRINT_TREE(ob->overlays_root); */
+      overlay_tree_delete(&ob->overlays_root, XOVERLAY (overlay),
+                          NULL);
+      eassert (!overlay_tree_mem_p (ob->overlays_root, XOVERLAY (overlay)));
+
       CHECK_TREE (ob->overlays_root);
+      /* PRINT_TREE(ob->overlays_root); */
     }
 
   new_start = clip_to_bounds (BUF_BEG (b), XINT (beg), BUF_Z (b));
@@ -3840,9 +3849,9 @@ buffer.  */)
   if (new_start == new_end && !NILP (Foverlay_get (overlay, Qevaporate)))
     return unbind_to (count, Fdelete_overlay (overlay));
 
-  /* printf("Moving overlay at %p\n", XOVERLAY (overlay)); */
   struct Lisp_Overlay *o = XOVERLAY (overlay);
   o->buf = buffer;
+  /* printf("inserting %p (%li to %li) in move\n", o, o->char_start, o->char_end); */
   overlay_tree_insert(&b->overlays_root, o);
 
   return unbind_to (count, overlay);
