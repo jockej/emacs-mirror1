@@ -1314,7 +1314,7 @@ adjust_after_replace (ptrdiff_t from, ptrdiff_t from_byte,
     {
       adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
                                   len, len_byte);
-      overlay_tree_adjust_for_replace(current_buffer->overlays_root,
+      overlay_tree_adjust_for_replace(&current_buffer->overlays_root,
                                       from, nchars_del, len);
     }
   else
@@ -1510,7 +1510,7 @@ replace_range (ptrdiff_t from, ptrdiff_t to, Lisp_Object new,
     {
       adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
                                   inschars, outgoing_insbytes);
-      overlay_tree_adjust_for_replace (current_buffer->overlays_root,
+      overlay_tree_adjust_for_replace (&current_buffer->overlays_root,
                                        from, nchars_del, inschars);
     }
   else
@@ -1646,7 +1646,7 @@ replace_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
         {
           adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
                                       inschars, insbytes);
-          overlay_tree_adjust_for_replace (current_buffer->overlays_root,
+          overlay_tree_adjust_for_replace (&current_buffer->overlays_root,
                                            from, nchars_del, inschars);
         }
       else

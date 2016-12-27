@@ -86,13 +86,13 @@ overlay_tree_adjust_for_insert (struct Lisp_Overlay **tree,
                                 ptrdiff_t to_char,
                                 bool before);
 
-ptrdiff_t
+void
 overlay_tree_adjust_for_delete (struct Lisp_Overlay **tree,
                                 ptrdiff_t from_char,
                                 ptrdiff_t to_char);
 
-ptrdiff_t
-overlay_tree_adjust_for_replace (struct Lisp_Overlay *tree,
+void
+overlay_tree_adjust_for_replace (struct Lisp_Overlay **tree,
                                  ptrdiff_t from_char,
                                  ptrdiff_t old_chars,
                                  ptrdiff_t new_chars);

@@ -27,16 +27,19 @@
    have this, so it has to be emulated.  This is the reason for
    passing around pointers to pointers all the time.
 
-   Also the code in the delete
-   routine is a bit more complicated because we need to delete the
-   actual memory area, so as to not trip up the GC.
+   Also the code in the delete routine is a bit more complicated
+   because we need to delete the actual memory area, so as to not trip
+   up the GC.  See comment above 'overlay_tree_delete'.
 
    The fact that this is an augmented tree also makes the rebalancing
-   operation (split and skew) a bit more complex.  */
+   operation (split and skew) a bit more complex.
+
+   [1] "Balanced Search Trees Made Simple", Arne Andersson, Workshop
+   on Algorithms and Data Structures, pages 60-71, Springer Verlag, 1993
+*/
 
 #include "overlays.h"
 #include "buffer.h"
-#include <stdio.h>
 
 /* Defined in buffer.c */
 extern void
@@ -72,14 +75,12 @@ struct Lisp_Overlay OVERLAY_SENTINEL_NODE =
     .level = 0,                          /* level */
     .char_start = 0,
     .char_end = 0
-    /* .parent = 0 */
   };
 
 struct Lisp_Overlay * OVERLAY_SENTINEL = &OVERLAY_SENTINEL_NODE;
 
 /* This function determines where overlays are inserted in the tree.
-   FIXME: I didn't think too hard about this...
-*/
+ */
 static inline bool
 overlay_lt (struct Lisp_Overlay *a, struct Lisp_Overlay *b)
 {
@@ -138,7 +139,7 @@ check_valid_aa_tree (struct Lisp_Overlay *root)
 }
 #endif
 
-/* Rebalancing.  See Andersson's paper for a good explaination .  */
+/* Rebalancing.  See Andersson's paper for a good explanation.  */
 inline static void
 overlay_skew (struct Lisp_Overlay **tt)
 {
@@ -146,43 +147,36 @@ overlay_skew (struct Lisp_Overlay **tt)
   if (t != OVERLAY_SENTINEL && t->left->level == t->level)
     {
       struct Lisp_Overlay *tmp = t;
-      /* printf("skewing around %p\n", t); */
-      /* printf("skew: t->max=%li, t->left->max=%li, t->right->max=%li\n" */
-             /* ,t->max, t->left->max, t->right->max); */
-      /* printf("skew: tmp->max=%li, tmp->left->max=%li, tmp->right->max=%li\n" */
-             /* ,tmp->max, tmp->left->max, tmp->right->max); */
       t = *tt = t->left;
       tmp->left = t->right;
       t->right = tmp;
-      /* printf("skew: tmp->max=%li, t->max=%li\n", tmp->max, t->max); */
       tmp->max = overlay_find_max(tmp);
       t->max = overlay_find_max(t);
-      /* printf("skew: tmp->max=%li, t->max=%li\n", tmp->max, t->max); */
     }
 }
 
 /* Rebalancing.  See Andersson's paper for a good explaination.  This
    is a bit more complicated than his code, since we need to maintain
-   parent pointer and max field.  */
+   max field.  */
 inline static void
 overlay_split (struct Lisp_Overlay **tt)
 {
   struct Lisp_Overlay *t = *tt;
   if (t != OVERLAY_SENTINEL && t->level == t->right->right->level )
     {
-      /* printf("splitting around %p\n", t); */
       struct Lisp_Overlay *tmp = t;
       t = *tt = t->right;
       tmp->right = t->left;
       t->left = tmp;
       t->level++;
       eassert (t->level - 1 == tmp->level);
-
       tmp->max = overlay_find_max(tmp);
       t->max = overlay_find_max(t);
     }
 }
 
+#include <stdio.h>
+/* This is quite useful for debugging.  */
 void
 print_tree(struct Lisp_Overlay *tree, unsigned level)
 {
@@ -221,8 +215,6 @@ overlay_tree_insert_internal (struct Lisp_Overlay **tree,
 
   if (t == OVERLAY_SENTINEL)
     {
-      /* printf("Inserting overlay from %li to %li with max %li at %p\n", */
-             /* node->char_start, node->char_end, node->char_end, node); */
       node->left = node->right = OVERLAY_SENTINEL;
       node->level = 1;
       node->max = node->char_end;
@@ -233,25 +225,12 @@ overlay_tree_insert_internal (struct Lisp_Overlay **tree,
   else
     {
       struct Lisp_Overlay **dir = overlay_lt (node, t) ? &t->left : &t->right;
-
-      /* if (dir == &t->left) */
-        /* printf("insert: going left at %p\n", t); */
-      /* else if (dir == &t->right) */
-        /* printf("insert: going right at %p\n", t); */
       ptrdiff_t child_max = overlay_tree_insert_internal (dir, node);
-      /* printf("(t = %p) t->max: %li, child_max: %li\n", t, t->max, child_max); */
       if (child_max > t->max)
-        {
           t->max = child_max;
-        }
     }
-  /* printf("t=%p, *tree=%p\n", t, *tree); */
   overlay_skew (tree);
   overlay_split (tree);
-  /* printf("t=%p, *tree=%p\n", t, *tree); */
-
-  /* printf("insert internal: (*tree)->max=%li, t->max=%li\n", */
-         /* (*tree)->max, t->max); */
   return (*tree)->max;
 }
 
@@ -265,6 +244,8 @@ overlay_tree_insert (struct Lisp_Overlay **tree,
   CHECK_TREE (*tree);
 }
 
+/* Find the immediate predecessor of NODE.  Put it in PRED and its
+   parent in PRED_PARENT.  */
 static void
 find_pred (struct Lisp_Overlay *node, struct Lisp_Overlay **pred,
            struct Lisp_Overlay **pred_parent)
@@ -280,6 +261,8 @@ find_pred (struct Lisp_Overlay *node, struct Lisp_Overlay **pred,
   *pred_parent= parent;
 }
 
+/* Find the immediate succecessor of NODE.  Put it in SUCC and its
+   parent in SUCC_PARENT.  */
 static void
 find_succ (struct Lisp_Overlay *node, struct Lisp_Overlay **succ,
            struct Lisp_Overlay **succ_parent)
@@ -299,7 +282,7 @@ find_succ (struct Lisp_Overlay *node, struct Lisp_Overlay **succ,
    depending on the value of PREV.  If PREV is true, it's the
    predecessor, otherwise the  successor.
 
-   This is needed since we use the address as compnent to determine
+   This is needed since we use the address as a component to determine
    where a struct Lisp_Overlay goes in the tree (see 'overlay_lt') but
    the primary elements to order by are 'char_start' and 'char_end'.
    These can however change e.g. because of a delete.  Then, since the
@@ -332,8 +315,6 @@ maybe_replace_by_next (struct Lisp_Overlay **node, bool prev)
           && repl->char_end == t->char_end
           && (prev ? repl > t: repl < t))
         {
-          /* printf("ALERT! repl (%p) would be %c t (%p)!\n", */
-                 /* repl, prev ? '>' : '<', t); */
           struct Lisp_Overlay *tmp;
           unsigned utmp;
           tmp = t->left;
@@ -354,50 +335,40 @@ maybe_replace_by_next (struct Lisp_Overlay **node, bool prev)
           repl->max = t->max;
           t->max = overlay_find_max(t);
           if (repl == repl_parent->left)
-            {
-              repl_parent->left = t;
-              /* printf("repl (%p) is left child of repl_parent (%p)\n", */
-                     /* repl, repl_parent); */
-            }
+            repl_parent->left = t;
           else if (repl == repl_parent->right)
-            {
-              repl_parent->right = t;
-              /* printf("repl (%p) is right child of repl_parent (%p)\n", */
-                     /* repl, repl_parent); */
-            }
+            repl_parent->right = t;
           *node = repl;
-          /* eassert (false); */
         }
     }
 }
 
-/* Delete NODE from TREE.  */
+/* Delete NODE from TREE.  This code is more complicated than in
+   Andersson's paper.  There, NODE is not actually deleted, but its
+   contents are replaced.  But here we need to keep the actual memory
+   area since there may be reference to it elsewhere.  */
 void
 overlay_tree_delete (struct Lisp_Overlay **tree,
                      struct Lisp_Overlay *node,
                      struct Lisp_Overlay *parent)
 {
   struct Lisp_Overlay *t = *tree;
-  static __thread struct Lisp_Overlay *last, *lasts_parent,
-    *deleted, *deleteds_parent;
 
-  /* printf("top of delete: tree=%p, *tree=%p\n", tree, *tree); */
+  /* DELETED will point to the node which should be removed.  LAST
+  will point to the element which whould replace it.  */
+  static __thread struct Lisp_Overlay *last, *deleted;
+
   if (t == OVERLAY_SENTINEL)
-    {
-      /* printf("hit the overlay sentinel\n"); */
-      return;
-    }
+    return;
 
   last = t;
   lasts_parent = parent;
   if (overlay_lt(node, t))
     {
-      /* printf("Turning left at %p, sending in %p as tree\n", t, &t->left); */
       overlay_tree_delete (&t->left, node, t);
     }
   else
     {
-      /* printf("Turning right at %p, sending in %p as tree\n", t, &t->right); */
       deleted = t;
       deleteds_parent = parent;
       overlay_tree_delete (&t->right, node, t);
@@ -407,42 +378,36 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
       deleted != OVERLAY_SENTINEL &&
       node == deleted)
     {
-      /* printf("Deleted overlay from %ld to %ld at addr: %p with \n"\ */
-             /* "last: %p, lasts_parent: %p, deleteds_parent: %p\n", */
-             /* deleted->char_start, deleted->char_end, deleted, last, */
-             /* lasts_parent, deleteds_parent); */
-      /* PRINT_TREE(current_buffer->overlays_root); */
-      deleted->deleted = 1;
-      /* printf("*tree=%p, t=%p, t->right=%p\n", *tree, t, t->right); */
-      *tree = t->right;
-      /* printf("*tree=%p, t=%p, t->right=%p\n", *tree, t, t->right); */
+      /* Replace LAST with it's successor, which may be a leaf node or
+         the sentinel.  Note that DELETED is still 'in use' further up
+         the stack, so we cannot dispose of it here.  Instead we do
+         that when we hit it on the way up the call stack, see
+         below.  */
+      *tree = last->right;
     }
   else /* We have are now going up the stack after removing LAST from
           the tree.  */
     {
       if (t == deleted)
         {
-          /* printf("Hit deleted (%p) on the way up!\n", deleted); */
-          /* printf("last (%p): left=%p, right=%p, lvl=%u, deleted (%p): left=%p, right=%p, lvl=%u\n", */
-                 /* last, last->left, last->right, last->level, deleted, */
-                 /* deleted->left, deleted->right, deleted->level); */
+          /* Time to finally replace DELETED with LAST.  */
           last->level = deleted->level;
           last->left = deleted->left;
           last->right = deleted->right;
-          /* printf("before putting last\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
-
           t = *tree = last;
-          struct Lisp_Overlay *a = *tree;
-          maybe_replace_by_next (tree, true);
-          if (*tree != a)
-            {
-              /* printf("Swapped out %p and %p in delete!\n", a, *tree); */
-            }
+
+          /* DELETED is replaced by LAST, which is DELETEDs immediate
+             successor.  However, it may have been the case that
+             DELETED was > than it's immediate predecessor only
+             because its address was greater.  If that was the case,
+             then if LASTs address is < than DELETEDs we may have to
+             swap LAST and DELETEDs predecessor to get them in the
+             right order.  */
+          if (last < deleted)
+            maybe_replace_by_next (tree, true);
+          /* Now we can finally dispose of DELETED.  */
           deleted->left = deleted->right = OVERLAY_SENTINEL;
           deleted->buf = Qnil;
-          /* printf("after putting last:\n"); */
-          /* PRINT_TREE(current_buffer->overlays_root); */
         }
 
       /* Adjust all max fields along the path up.  */
@@ -451,8 +416,6 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
           || t->right->level < t->level - 1)
         {
           t->level--;
-          /* printf("lowering t (%p) to %u, right is at %u, left is at %u\n", */
-                 /* t, t->level, t->right->level, t->left->level); */
           if (t->right->level > t->level)
             t->right->level = t->level;
 
@@ -468,6 +431,7 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
     }
 }
 
+/* Add ELM to vector VECP at IDX.  If necessary adjust SIZE.  */
 static void
 add_to_vec (struct Lisp_Overlay *elm, Lisp_Object **vecp,
             ptrdiff_t *size, ptrdiff_t *idx)
@@ -481,6 +445,9 @@ add_to_vec (struct Lisp_Overlay *elm, Lisp_Object **vecp,
   XSETMISC((*vecp)[(*idx)++], elm);
 }
 
+/* Add all overlays in TREE which contain POS to the vector pointed to
+   by VEC_PTR adjusting IDX and VEC_SIZE as necessary.  The overlay
+   must end *after* POS.  */
 void
 overlay_tree_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
                  ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
@@ -495,14 +462,14 @@ overlay_tree_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
   if (tree->char_start <= pos)
     {
       if (tree->char_end > pos)
-      add_to_vec(tree, vec_ptr, vec_size, idx);
+        add_to_vec(tree, vec_ptr, vec_size, idx);
       overlay_tree_at (tree->right, pos, vec_size, vec_ptr, idx);
     }
   overlay_tree_at (tree->left, pos, vec_size, vec_ptr, idx);
 }
 
 /* This is exactly like `overlay_tree_at', except this also includes
-   overlays whose end is >= POS.  */
+   overlays whose end is == POS.  */
 void
 overlay_tree_around (struct Lisp_Overlay *tree, ptrdiff_t pos,
                      ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
@@ -515,12 +482,14 @@ overlay_tree_around (struct Lisp_Overlay *tree, ptrdiff_t pos,
   if (tree->char_start <= pos)
     {
       if (tree->char_end >= pos)
-      add_to_vec(tree, vec_ptr, vec_size, idx);
+        add_to_vec(tree, vec_ptr, vec_size, idx);
       overlay_tree_around (tree->right, pos, vec_size, vec_ptr, idx);
     }
   overlay_tree_around (tree->left, pos, vec_size, vec_ptr, idx);
 }
 
+/* Add all overlays in TREE which have window property w and one
+   endpoint at POS to VEC_PTR.  */
 void
 overlay_tree_endpoint_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
                           struct window *w, ptrdiff_t *vec_size,
@@ -739,9 +708,7 @@ reinsert_negative_size_overlays (struct Lisp_Overlay **root,
     }
 }
 
-/* Adjust CHARPOS for an insert from FROM_CHAR to TO_CHAR.  FIXME:
-   insertion_type and before.
- */
+/* Adjust CHARPOS for an insert from FROM_CHAR to TO_CHAR.  */
 static void
 adjust_pos_for_insert (ptrdiff_t *charpos, ptrdiff_t from_char,
                        ptrdiff_t to_char, bool insertion_type,
@@ -751,15 +718,15 @@ adjust_pos_for_insert (ptrdiff_t *charpos, ptrdiff_t from_char,
     {
       *charpos += to_char - from_char;
     }
-  else if (*charpos == from_char && insertion_type)
+  else if (*charpos == from_char && (insertion_type || before))
     {
       *charpos = to_char;
     }
 }
 
 /* Adjust all nodes in TREE for an insert from FROM_CHAR (FROM_BYTE)
-   to TO_CHAR (TO_BYTE).  Return TREEs max.
-   FIXME: before.  */
+   to TO_CHAR (TO_BYTE).  Put any overlays which end up with a
+   negative size in NEG_SIZE.  Return TREEs max.  */
 static ptrdiff_t
 adjust_tree_for_insert (struct Lisp_Overlay *tree, ptrdiff_t from_char,
                         ptrdiff_t to_char, bool before,
@@ -778,7 +745,6 @@ adjust_tree_for_insert (struct Lisp_Overlay *tree, ptrdiff_t from_char,
   adjust_pos_for_insert(&tree->char_end, from_char, to_char,
                         tree->end_insertion_type, before);
 
-  /* eassert (tree->char_start <= tree->char_end); */
   if (tree->char_end < tree->char_start)
     add_to_vec(tree, neg_size, len, idx);
 
@@ -794,9 +760,9 @@ adjust_tree_for_insert (struct Lisp_Overlay *tree, ptrdiff_t from_char,
 }
 
 
-/* Adjust all nodes in TREE for an insert from FROM_CHAR (FROM_BYTE)
-   to TO_CHAR (TO_BYTE).  Return TREEs max.
-   FIXME: before.  */
+/* Adjust all nodes in TREE for an insert from FROM_CHAR to TO_CHAR.
+   If any overlays end up with a negative size delete the from the
+   TREE and reinsert them.  */
 void
 overlay_tree_adjust_for_insert (struct Lisp_Overlay **tree,
                                 ptrdiff_t from_char,
@@ -821,51 +787,37 @@ adjust_pos_for_delete (ptrdiff_t *charpos, ptrdiff_t from_char,
                        ptrdiff_t to_char)
 {
   if (*charpos > to_char)
-    {
-      *charpos -= to_char - from_char;
-    }
+    *charpos -= to_char - from_char;
   else if (*charpos > from_char)
-    {
-      *charpos = from_char;
-    }
+    *charpos = from_char;
 }
 
 /* Adjust TREE for a delete from FROM_CHAR to TO_CHAR.  */
-ptrdiff_t
+void
 overlay_tree_adjust_for_delete (struct Lisp_Overlay **tree,
                                 ptrdiff_t from_char,
                                 ptrdiff_t to_char)
 {
   struct Lisp_Overlay *t = *tree;
   if (t == OVERLAY_SENTINEL || t->max < from_char)
-    return t->max;
+    return;
 
   adjust_pos_for_delete(&t->char_start, from_char, to_char);
   adjust_pos_for_delete(&t->char_end, from_char, to_char);
 
   eassert (t->char_start <= t->char_end);
-  ptrdiff_t r, l;
 
-  l = overlay_tree_adjust_for_delete(&t->left, from_char, to_char);
-  r = overlay_tree_adjust_for_delete(&t->right, from_char, to_char);
+  overlay_tree_adjust_for_delete(&t->left, from_char, to_char);
+  overlay_tree_adjust_for_delete(&t->right, from_char, to_char);
 
-  /* t->max = overlay_max(l, r, t->char_end); */
   t->max = overlay_find_max (t);
 
   if (t->char_start == from_char
       && t->char_end == from_char)
     {
-      struct Lisp_Overlay *a = *tree;
       maybe_replace_by_next (tree, true);
       maybe_replace_by_next (tree, false);
-      if (*tree != a)
-        {
-          /* printf("Swapped %p and %p in otafd!\n", *tree, a); */
-        }
     }
-
-
-  return t->max;
 }
 
 /* Adjust CHARPOS and BYTEPOS for a replace from FROM_CHAR to TO_CHAR.
@@ -877,40 +829,43 @@ adjust_pos_for_replace (ptrdiff_t *charpos, ptrdiff_t from_char,
   ptrdiff_t diff_chars = new_chars - old_chars;
 
   if (*charpos >= (from_char + old_chars))
-    {
-      *charpos += diff_chars;
-    }
+    *charpos += diff_chars;
   else if (*charpos > from_char)
-    {
-      *charpos = from_char;
-    }
+    *charpos = from_char;
 }
 
-/* Adjust TREE for a delete from FROM_CHAR to TO_CHAR.  */
-ptrdiff_t
-overlay_tree_adjust_for_replace (struct Lisp_Overlay *tree,
+/* Adjust TREE for a replace from FROM_CHAR, replacing OLD_CHARS
+   charecters with NEW_CHARS characters.  */
+void
+overlay_tree_adjust_for_replace (struct Lisp_Overlay **tree,
                                  ptrdiff_t from_char,
                                  ptrdiff_t old_chars,
                                  ptrdiff_t new_chars)
 {
-  if (tree == OVERLAY_SENTINEL || tree->max <= from_char)
-    return tree->max;
+  struct Lisp_Overlay *t = *tree;
+  if (t == OVERLAY_SENTINEL || t->max <= from_char)
+    return;
 
-  adjust_pos_for_replace(&tree->char_start, from_char,
+  adjust_pos_for_replace(&t->char_start, from_char,
                          old_chars, new_chars);
-  adjust_pos_for_replace(&tree->char_end, from_char,
+  adjust_pos_for_replace(&t->char_end, from_char,
                          old_chars, new_chars);
-  eassert (tree->char_start <= tree->char_end);
+  eassert (t->char_start <= t->char_end);
 
-  ptrdiff_t r, l;
+  overlay_tree_adjust_for_replace(&t->left, from_char,
+                                  old_chars, new_chars);
+  overlay_tree_adjust_for_replace(&t->right, from_char,
+                                  old_chars, new_chars);
 
-  l = overlay_tree_adjust_for_replace(tree->left, from_char,
-                                      old_chars, new_chars);
-  r = overlay_tree_adjust_for_replace(tree->right, from_char,
-                                      old_chars, new_chars);
+  t->max = overlay_find_max(t);
 
-  tree->max = overlay_max(l, r, tree->char_end);
-  return tree->max;
+  if ((new_chars - old_chars < 0)
+      && t->char_start == from_char
+      && t->char_end == from_char)
+    {
+      maybe_replace_by_next (tree, true);
+      maybe_replace_by_next (tree, false);
+    }
 }
 
 /* These are for debugging */
