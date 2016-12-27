@@ -4557,23 +4557,22 @@ from PROCESS only, suspending reading output from other processes.
 If JUST-THIS-ONE is an integer, don't run any timers either.
 Return non-nil if we received any output from PROCESS (or, if PROCESS
 is nil, from any process) before the timeout expired.  */)
-  (register Lisp_Object process, Lisp_Object seconds, Lisp_Object millisec, Lisp_Object just_this_one)
+  (Lisp_Object process, Lisp_Object seconds, Lisp_Object millisec,
+   Lisp_Object just_this_one)
 {
   intmax_t secs;
   int nsecs;
 
   if (! NILP (process))
     {
-      struct Lisp_Process *procp;
-
       CHECK_PROCESS (process);
-      procp = XPROCESS (process);
+      struct Lisp_Process *proc = XPROCESS (process);
 
       /* Can't wait for a process that is dedicated to a different
 	 thread.  */
-      if (!EQ (procp->thread, Qnil) && !EQ (procp->thread, Fcurrent_thread ()))
+      if (!EQ (proc->thread, Qnil) && !EQ (proc->thread, Fcurrent_thread ()))
 	error ("Attempt to accept output from process %s locked to thread %s",
-	       SDATA (procp->name), SDATA (XTHREAD (procp->thread)->name));
+	       SDATA (proc->name), SDATA (XTHREAD (proc->thread)->name));
     }
   else
     just_this_one = Qnil;
@@ -4937,8 +4936,8 @@ wait_reading_process_output_1 (void)
    READ_KBD is:
      0 to ignore keyboard input, or
      1 to return when input is available, or
-     -1 meaning caller will actually read the input, so don't throw to
-       the quit handler, or
+    -1 meaning caller will actually read the input, so don't throw to
+       the quit handler
 
    DO_DISPLAY means redisplay should be done to show subprocess
      output that arrives.

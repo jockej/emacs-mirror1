@@ -19,7 +19,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #ifndef THREAD_H
 #define THREAD_H
 
-#include <sys/types.h>		/* for ssize_t used by regex.h */
 #include "regex.h"
 
 #ifdef WINDOWSNT
@@ -28,6 +27,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "sysselect.h"		/* FIXME */
 #include "systime.h"		/* FIXME */
+#include "systhread.h"
 
 struct thread_state
 {
@@ -48,7 +48,7 @@ struct thread_state
   /* The thread's function.  */
   Lisp_Object function;
 
-  /* If non-nil, this thread has been signalled.  */
+  /* If non-nil, this thread has been signaled.  */
   Lisp_Object error_symbol;
   Lisp_Object error_data;
 
@@ -56,14 +56,7 @@ struct thread_state
      waiting on.  */
   Lisp_Object event_object;
 
-  /* m_byte_stack_list must be the first non-lisp field.  */
-  /* A list of currently active byte-code execution value stacks.
-     Fbyte_code adds an entry to the head of this list before it starts
-     processing byte-code, and it removed the entry again when it is
-     done.  Signalling an error truncates the list.  */
-  struct byte_stack *m_byte_stack_list;
-#define byte_stack_list (current_thread->m_byte_stack_list)
-
+  /* m_stack_bottom must be the first non-Lisp field.  */
   /* An address near the bottom of the stack.
      Tells GC how to save a copy of the stack.  */
   char *m_stack_bottom;
@@ -78,7 +71,7 @@ struct thread_state
   /* Chain of condition handlers currently in effect.
      The elements of this chain are contained in the stack frames
      of Fcondition_case and internal_condition_case.
-     When an error is signaled (by calling Fsignal, below),
+     When an error is signaled (by calling Fsignal),
      this chain is searched for an element that applies.  */
   struct handler *m_handlerlist;
 #define handlerlist (current_thread->m_handlerlist)
@@ -143,7 +136,7 @@ struct thread_state
   Lisp_Object m_re_match_object;
 #define re_match_object (current_thread->m_re_match_object)
 
-  /* This variable is different from waiting_for_input in keyboard.c.
+  /* This member is different from waiting_for_input.
      It is used to communicate to a lisp process-filter/sentinel (via the
      function Fwaiting_for_user_input_p) whether Emacs was waiting
      for user-input when that process-filter was called.
@@ -154,6 +147,10 @@ struct thread_state
      when not inside wait_reading_process_output.  */
   int m_waiting_for_user_input_p;
 #define waiting_for_user_input_p (current_thread->m_waiting_for_user_input_p)
+
+  /* True while doing kbd input.  */
+  bool m_waiting_for_input;
+#define waiting_for_input (current_thread->m_waiting_for_input)
 
   /* The OS identifier for this thread.  */
   sys_thread_t thread_id;
@@ -167,9 +164,35 @@ struct thread_state
      interrupter should broadcast to this condition.  */
   sys_cond_t *wait_condvar;
 
+  /* This thread might have released the global lock.  If so, this is
+     non-zero.  When a thread runs outside thread_select with this
+     flag non-zero, it means it has been interrupted by SIGINT while
+     in thread_select, and didn't have a chance of acquiring the lock.
+     It must do so ASAP.  */
+  int not_holding_lock;
+
   /* Threads are kept on a linked list.  */
   struct thread_state *next_thread;
 };
+
+INLINE bool
+THREADP (Lisp_Object a)
+{
+  return PSEUDOVECTORP (a, PVEC_THREAD);
+}
+
+INLINE void
+CHECK_THREAD (Lisp_Object x)
+{
+  CHECK_TYPE (THREADP (x), Qthreadp, x);
+}
+
+INLINE struct thread_state *
+XTHREAD (Lisp_Object a)
+{
+  eassert (THREADP (a));
+  return XUNTAG (a, Lisp_Vectorlike);
+}
 
 /* A mutex in lisp is represented by a system condition variable.
    The system mutex associated with this condition variable is the
@@ -199,6 +222,25 @@ struct Lisp_Mutex
   lisp_mutex_t mutex;
 };
 
+INLINE bool
+MUTEXP (Lisp_Object a)
+{
+  return PSEUDOVECTORP (a, PVEC_MUTEX);
+}
+
+INLINE void
+CHECK_MUTEX (Lisp_Object x)
+{
+  CHECK_TYPE (MUTEXP (x), Qmutexp, x);
+}
+
+INLINE struct Lisp_Mutex *
+XMUTEX (Lisp_Object a)
+{
+  eassert (MUTEXP (a));
+  return XUNTAG (a, Lisp_Vectorlike);
+}
+
 /* A condition variable as a lisp object.  */
 struct Lisp_CondVar
 {
@@ -214,16 +256,36 @@ struct Lisp_CondVar
   sys_cond_t cond;
 };
 
+INLINE bool
+CONDVARP (Lisp_Object a)
+{
+  return PSEUDOVECTORP (a, PVEC_CONDVAR);
+}
+
+INLINE void
+CHECK_CONDVAR (Lisp_Object x)
+{
+  CHECK_TYPE (CONDVARP (x), Qcondition_variable_p, x);
+}
+
+INLINE struct Lisp_CondVar *
+XCONDVAR (Lisp_Object a)
+{
+  eassert (CONDVARP (a));
+  return XUNTAG (a, Lisp_Vectorlike);
+}
+
 extern struct thread_state *current_thread;
 
-extern void unmark_threads (void);
 extern void finalize_one_thread (struct thread_state *state);
 extern void finalize_one_mutex (struct Lisp_Mutex *);
 extern void finalize_one_condvar (struct Lisp_CondVar *);
+extern void maybe_reacquire_global_lock (void);
 
 extern void init_threads_once (void);
 extern void init_threads (void);
 extern void syms_of_threads (void);
+extern bool primary_thread_p (void *);
 
 typedef int select_func (int, fd_set *, fd_set *, fd_set *,
 			 const struct timespec *, const sigset_t *);

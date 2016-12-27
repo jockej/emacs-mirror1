@@ -26,7 +26,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <sys/types.h>
 #include <sys/file.h>
 #include <unistd.h>
 
@@ -129,6 +128,8 @@ Lisp_Object Vlibrary_cache;
    Prevents reinitialization of the Lisp world and keymaps
    on subsequent starts.  */
 bool initialized;
+
+bool generating_ldefs_boot;
 
 #ifndef CANNOT_DUMP
 /* Set to true if this instance of Emacs might dump.  */
@@ -685,7 +686,10 @@ main (int argc, char **argv)
   stack_bottom = &stack_bottom_variable;
 
   dumping = !initialized && (strcmp (argv[argc - 1], "dump") == 0
-			     || strcmp (argv[argc - 1], "bootstrap") == 0);
+			     || strcmp (argv[argc - 1], "bootstrap") == 0 );
+
+  generating_ldefs_boot = getenv ("GENERATE_LDEFS_BOOT");
+
 
   /* True if address randomization interferes with memory allocation.  */
 # ifdef __PPC64__
