@@ -2199,17 +2199,12 @@ struct Lisp_Overlay
 
     bool_bf start_insertion_type : 1;
     bool_bf end_insertion_type : 1;
-    bool_bf deleted : 1;
-    bool_bf single_mark: 1;
 
     Lisp_Object plist;
 
     ptrdiff_t char_start, char_end;
-    /* ptrdiff_t byte_start, byte_end; */
     ptrdiff_t max;
 
-    /* For the tree.  */
-    /* Lisp_Object parent; /\* buffer or parent node *\/ */
     Lisp_Object buf;
     struct Lisp_Overlay *left, *right;
     unsigned level;

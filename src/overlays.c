@@ -362,7 +362,6 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
     return;
 
   last = t;
-  lasts_parent = parent;
   if (overlay_lt(node, t))
     {
       overlay_tree_delete (&t->left, node, t);
@@ -370,7 +369,6 @@ overlay_tree_delete (struct Lisp_Overlay **tree,
   else
     {
       deleted = t;
-      deleteds_parent = parent;
       overlay_tree_delete (&t->right, node, t);
     }
 
@@ -518,7 +516,9 @@ overlay_tree_endpoint_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
                             vec_size, vec_ptr, idx);
 }
 
-
+/* Gather all the overlays at POS which should be evaporated.  That
+   is: all the zero size overlays at POS which have the 'evaporate
+   property set to non nil.  */
 void
 overlay_tree_evap (struct Lisp_Overlay *tree, ptrdiff_t pos,
                    ptrdiff_t *vec_size, Lisp_Object **vec_ptr,
@@ -540,6 +540,9 @@ overlay_tree_evap (struct Lisp_Overlay *tree, ptrdiff_t pos,
   overlay_tree_evap (tree->left, pos, vec_size, vec_ptr, idx);
 }
 
+/* Gather all overlays which are in BEG to END.  Zero size overlays
+   count if they either start at BEG or start at END and END ==
+   BUF_END, that is: END is the last position in the buffer.  */
 void
 overlay_tree_in (struct Lisp_Overlay *tree, ptrdiff_t beg,
                  ptrdiff_t end, ptrdiff_t buf_end,
@@ -562,17 +565,6 @@ overlay_tree_in (struct Lisp_Overlay *tree, ptrdiff_t beg,
                    vec_size, vec_ptr, idx);
 }
 
-
-static void
-overlay_tree_drop_all_internal (struct buffer *buf,
-                                struct Lisp_Overlay *tree)
-{
-  if (tree == OVERLAY_SENTINEL)
-    return;
-  overlay_tree_drop_all_internal (buf, tree->left);
-  overlay_tree_drop_all_internal (buf, tree->right);
-  modify_overlay (buf, tree->char_start, tree->char_end);
-}
 
 void
 overlay_tree_next_change (struct Lisp_Overlay *tree,
@@ -644,7 +636,18 @@ overlay_tree_prev_change (struct Lisp_Overlay *tree,
     }
 }
 
+static void
+overlay_tree_drop_all_internal (struct buffer *buf,
+                                struct Lisp_Overlay *tree)
+{
+  if (tree == OVERLAY_SENTINEL)
+    return;
+  overlay_tree_drop_all_internal (buf, tree->left);
+  overlay_tree_drop_all_internal (buf, tree->right);
+  modify_overlay (buf, tree->char_start, tree->char_end);
+}
 
+/* Drop all overlays in BUF.  */
 void
 overlay_tree_drop_all(struct buffer *buf)
 {

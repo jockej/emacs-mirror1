@@ -3810,7 +3810,6 @@ build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object buffer,
                Lisp_Object plist)
 {
   register Lisp_Object overlay;
-  ptrdiff_t char_start, char_end;
 
   overlay = allocate_misc (Lisp_Misc_Overlay);
   set_overlay_plist (overlay, plist);
@@ -3820,9 +3819,6 @@ build_overlay (Lisp_Object start, Lisp_Object end, Lisp_Object buffer,
   XOVERLAY (overlay)->char_start = XINT (start);
   XOVERLAY (overlay)->char_end = XINT (end);
   XOVERLAY (overlay)->buf = buffer;
-  /* XOVERLAY (overlay)->deleted = 0; */
-  /* XOVERLAY (overlay)->byte_start = CHAR_TO_BYTE(char_start); */
-  /* XOVERLAY (overlay)->byte_end = CHAR_TO_BYTE(char_end); */
 
   return overlay;
 }
@@ -6198,7 +6194,6 @@ mark_overlay_tree (struct Lisp_Overlay *o)
   if (!o || o == OVERLAY_SENTINEL || o->gcmarkbit)
     return;
 
-  /* printf("Marked overlay at %p\n", o); */
   o->gcmarkbit = 1;
   mark_overlay_tree(o->left);
   mark_overlay_tree(o->right);
