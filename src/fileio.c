@@ -55,6 +55,7 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "blockinput.h"
 #include "region-cache.h"
 #include "frame.h"
+#include "overlays.h"
 
 #ifdef HAVE_LINUX_FS_H
 # include <sys/ioctl.h>
@@ -3374,8 +3375,10 @@ decide_coding_unwind (Lisp_Object unwind_data)
 
   set_buffer_internal (XBUFFER (buffer));
   adjust_markers_for_delete (BEG, BEG_BYTE, Z, Z_BYTE);
+  CHECK_TREE (current_buffer->overlays_root);
   overlay_tree_adjust_for_delete (&current_buffer->overlays_root,
                                   BEG, Z);
+  CHECK_TREE (current_buffer->overlays_root);
 #ifdef OVERLAYS_REMOVE
   adjust_overlays_for_delete (BEG, Z - BEG);
 #endif
