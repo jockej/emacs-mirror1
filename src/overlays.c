@@ -40,6 +40,7 @@
 
 #include "overlays.h"
 #include "buffer.h"
+#include <stdlib.h>
 
 /* Defined in buffer.c */
 extern void
@@ -137,6 +138,66 @@ check_valid_aa_tree (struct Lisp_Overlay *root)
   check_valid_aa_tree (root->left);
   check_valid_aa_tree (root->right);
 }
+
+
+#define CHECK(cond) \
+  if (!(cond)) return false
+
+bool
+check_tree (struct Lisp_Overlay *root)
+{
+
+  if (root == OVERLAY_SENTINEL)
+    return true;
+
+  /* Check it doesn't end before it starts */
+  CHECK(root->char_end >= root->char_start);
+  CHECK (root->level >= root->right->level &&
+           root->level >= root->left->level);
+  /* No horizontal left links */
+  CHECK (root->left->level < root->level);
+  /* At most one link on same level */
+  CHECK (root->right->right->level < root->level);
+
+  CHECK ((root->right == OVERLAY_SENTINEL) ||
+           (! overlay_lt (root->right, root)));
+  CHECK ((root->left == OVERLAY_SENTINEL) ||
+           (overlay_lt (root->left, root)));
+  /* Check we don't have ourselves as a child */
+  CHECK (root->left != root && root->right != root);
+
+  /* Check the max field */
+  CHECK (root->max >= root->left->max &&
+           root->max >= root->right->max &&
+           root->max >= root->char_end);
+  CHECK (root->max == root->left->max ||
+           root->max == root->right->max ||
+           root->max == root->char_end);
+
+  /* Check subtrees */
+  if (!check_tree (root->left)) return false;
+  return check_tree (root->right);
+}
+
+bool
+check_no_loops (struct Lisp_Overlay *root)
+{
+
+  if (root == OVERLAY_SENTINEL)
+    return true;
+
+  /* Check we don't have ourselves as a child */
+  CHECK (root->left != root && root->right != root);
+  /* Check we don't have ourselves as a grand child */
+  CHECK (root->left->left != root && root->right->left != root &&
+         root->left->right != root && root->right->right != root);
+
+  printf("Root=%p\n", root);
+
+  if (!check_no_loops (root->left)) return false;
+  return check_no_loops (root->right);
+}
+#undef CHECK(cond)
 #endif
 
 /* Rebalancing.  See Andersson's paper for a good explanation.  */
@@ -180,7 +241,7 @@ overlay_split (struct Lisp_Overlay **tt)
 void
 print_tree(struct Lisp_Overlay *tree, unsigned level)
 {
-
+  eassert (level < 20);
   for (unsigned i = 0; i < level; i++)
     printf("  ");
   if (tree == OVERLAY_SENTINEL)
@@ -817,19 +878,6 @@ struct v
   struct Lisp_Overlay **p, *t;
 };
 
-
-/* static struct v* */
-/* new_v (struct v **vec, size_t *size, size_t *idx) */
-/* { */
-/*   if (++(*idx) == *size) */
-/*     { */
-/*       *size += 100; */
-/*       *vec = xnrealloc (*vec, *size, sizeof (struct v)); */
-/*     } */
-/*   return &(*vec)[*idx - 1]; */
-/* } */
-
-
 /* Add ELM to vector VEC at IDX.  If necessary adjust SIZE.  */
 static void
 add_to_ov_vec (struct v **vec, size_t *size, size_t *idx,
@@ -846,11 +894,16 @@ add_to_ov_vec (struct v **vec, size_t *size, size_t *idx,
 }
 
 static int
-sortp (void *o1, void *o2)
+sortp (const void *v1, const void *v2)
 {
-  struct v *v1 = (struct v*)o1;
-  struct v *v2 = (struct v*)o2;
-  return v1->t - v2->t;
+  struct Lisp_Overlay *t1 = ((struct v*)v1)->t;
+  struct Lisp_Overlay *t2 = ((struct v*)v2)->t;
+  if (t1 < t2)
+    return -1;
+  else if (t1 > t2)
+    return 1;
+  else
+    return 0;
 }
 
 
@@ -910,57 +963,108 @@ static size_t count (struct Lisp_Overlay *root)
   return n;
 }
 
+
 static void
-update_parent (struct Lisp_Overlay **tree,
-               struct Lisp_Overlay *old_child,
-               struct Lisp_Overlay *new_child)
+update_parent_pointer (struct Lisp_Overlay *t,
+                       struct Lisp_Overlay *new_parent,
+                       struct v *start, struct v *end,
+                       bool right)
 {
-  struct Lisp_Overlay *t = *tree;
   if (t == OVERLAY_SENTINEL)
     return;
 
-  if (t == old_child)
+  struct v *middle, *target = NULL;
+  while (start <= end)
     {
-      *tree = new_child;
-      return;
+      middle = start + (end - start)/2;
+      if (t < middle->t)
+        end = middle - 1;
+      else if (t > middle->t)
+        start = middle + 1;
+      else
+        {
+          target = middle;
+          break;
+        }
     }
-  if (overlay_lt (new_child, t))
+  eassert (target != NULL);
+  if (right)
     {
-      update_parent (&t->left, old_child, new_child);
+      target->p = &new_parent->right;
     }
   else
     {
-      update_parent (&t->right, old_child, new_child);
+      target->p = &new_parent->left;
     }
 }
 
 static void
+update_root_pointer (struct Lisp_Overlay *t,
+                     struct Lisp_Overlay **overlays_root,
+                     struct v *start, struct v *end)
+{
+  if (t == OVERLAY_SENTINEL)
+    return;
+
+  struct v *middle, *target = NULL;
+  while (start <= end)
+    {
+      middle = start + (end - start)/2;
+      if (t < middle->t)
+        end = middle - 1;
+      else if (t > middle->t)
+        start = middle + 1;
+      else
+        {
+          target = middle;
+          break;
+        }
+    }
+  eassert (target != NULL);
+  printf("saying %p is pointed to by the root\n", t);
+  target->p = overlays_root;
+}
+
+
+static void
 reorder_overlays (struct Lisp_Overlay **tree, ptrdiff_t from_char,
-                  struct Lisp_Overlay **tree_root, struct v *v,
-                  size_t *idx)
+                  struct v *v, size_t v_size, size_t *idx, int level)
 {
   struct Lisp_Overlay *t = *tree;
+  struct Lisp_Overlay *r;
   if (t == OVERLAY_SENTINEL
       || t->max < from_char)
     return;
 
-  reorder_overlays (&t->left, from_char, tree_root, v, idx);
+  printf("calling reorder_overlays for t->left (%p) from level %d\n",
+         t->left, level);
+  reorder_overlays (&t->left, from_char, v, v_size, idx, level+1);
+  if (*tree != t)
+    {
+      printf("t (%p) != *tree (%p)!\n", t, *tree);
+      printf("setting t to *tree\n");
+      /* eassert (*tree == t); */
+      t = *tree;
+    }
 
   if (t->char_start == from_char
       && t->char_end == from_char)
     {
-
       unsigned tmp_lvl;
       ptrdiff_t tmp_max;
       struct Lisp_Overlay *tmp_left, *tmp_right;
-      struct Lisp_Overlay *r = v[*idx].t;
       struct Lisp_Overlay **p = v[*idx].p;
+      r = v[*idx].t;
       (*idx)++;
-      if (r == t) goto right;
+      if (r == t) {
+        printf("r (%p) == t (%p)\n", r, t);
+        goto right;
+      }
       /* t should be swapped with r, we should be guaranteed that r <=
          t.  */
-      printf("SWAPIT!\nt = %p, r = %p\n", t, r);
-      /* PRINT_TREE(current_buffer->overlays_root); */
+      printf("SWAPIT!\nt = %p, r = %p, *idx = %lu, level = %d\n",
+             t, r, *idx, level);
+      PRINT_TREE(current_buffer->overlays_root);
       /* swap max.  */
       tmp_max = t->max;
       t->max = r->max;
@@ -992,15 +1096,46 @@ reorder_overlays (struct Lisp_Overlay **tree, ptrdiff_t from_char,
         }
       t->right = tmp_right;
 
-      /* *p = t; */
-      update_parent (tree_root, r, t);
-      t = *tree = r;
+      *p = t;
+      printf("saying that %p now has %p as parent\n", t->right, t);
+      update_parent_pointer (t->right, t, v, v + v_size - 1, true);
+      printf("saying that %p now has %p as parent\n", t->left, t);
+      update_parent_pointer (t->left, t, v, v + v_size - 1, false);
+      if (tree == &r->left)
+        {
+          printf("tree == &r->left\n");
+
+
+        }
+      else if (tree == &r->right)
+        {
+          printf("tree == &r->right\n");
+        }
+      else
+        {
+          t = *tree = r;
+        }
+      if (t == current_buffer->overlays_root)
+        {
+          printf("Saying that %p is pointed to by overlays_root\n", t);
+          update_root_pointer (t, &current_buffer->overlays_root,
+                               v, v + v_size - 1);
+        }
       /* PRINT_TREE(current_buffer->overlays_root); */
+      printf("saying that %p now has %p as parent\n", r->right, r);
+      update_parent_pointer (r->right, r, v, v + v_size - 1, true);
+      /* update_parent_pointer (t->left, r, v + *idx, v + v_size, false); */
+      /* if (check_no_loops(current_buffer->overlays_root)) */
+      PRINT_TREE(current_buffer->overlays_root);
+      /* (*idx)++; */
     }
 
  right:
-  if (t->char_start <= from_char)
-    reorder_overlays (&t->right, from_char, tree_root, v, idx);
+  if (r->char_start <= from_char) {
+    printf("calling reorder_overlays for r->right (%p) from level %d\n",
+           r->right, level);
+    reorder_overlays (&r->right, from_char, v, v_size, idx, level+1);
+  }
 }
 
 
@@ -1023,9 +1158,19 @@ overlay_tree_adjust_for_delete (struct Lisp_Overlay **tree,
                                     &vec2, &vec2_size, &vec2_idx);
   eassert (vec2_idx == vec1_idx);
   qsort (vec2, vec2_idx, sizeof (struct v), sortp);
+  struct v *vv = NULL;
+  for (size_t a = 0; a < vec2_idx; a++)
+    {
+      if (vv)
+        eassert (vv->t <= vec2[a].t);
+      vv = vec2 + a;
+    }
 
   size_t i = 0;
-  reorder_overlays(tree, from_char, tree, vec2, &i);
+  /* printf("Calling reorder_overlays\n"); */
+  reorder_overlays(tree, from_char, vec2, vec2_idx, &i, 0);
+  /* PRINT_TREE(*tree); */
+  /* eassert (check_no_loops (*tree)); */
 
   xfree (vec1);
   xfree (vec2);
