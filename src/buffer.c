@@ -851,7 +851,7 @@ CLONE nil means the indirect buffer's state is reset to default values.  */)
 void
 delete_all_overlays (struct buffer *b)
 {
-  overlay_tree_drop_all (b);
+  ot_drop_all (b);
 }
 
 /* Reinitialize everything about a buffer except its name and contents
@@ -2848,7 +2848,7 @@ overlays_at (EMACS_INT pos, bool extend, Lisp_Object **vec_ptr,
 
 #endif
   ptrdiff_t idx = 0;
-  overlay_tree_at (current_buffer->overlays_root,
+  overlays_at_new (current_buffer->overlays_root,
                    pos, len_ptr, vec_ptr, &idx);
   return idx;
 }
@@ -2987,7 +2987,7 @@ overlays_in (EMACS_INT beg, EMACS_INT end, bool extend,
   return idx;
 #endif
   ptrdiff_t idx = 0;
-  overlay_tree_in (current_buffer->overlays_root, beg, end, Z,
+  overlays_in_new (current_buffer->overlays_root, beg, end, Z,
                    len_ptr, vec_ptr, &idx);
 
   next_ptr = prev_ptr = NULL;
@@ -3739,7 +3739,7 @@ for the rear of the overlay advance when text is inserted there
   o->start_insertion_type = !NILP (front_advance);
   o->end_insertion_type = !NILP (rear_advance);
 
-  overlay_tree_insert(&b->overlays_root, o);
+  ot_insert(&b->overlays_root, o);
   return overlay;
 }
 
@@ -3819,9 +3819,7 @@ buffer.  */)
              /* XOVERLAY (overlay)); */
       CHECK_TREE (ob->overlays_root);
       /* PRINT_TREE(ob->overlays_root); */
-      overlay_tree_delete(&ob->overlays_root, XOVERLAY (overlay),
-                          NULL);
-      eassert (!overlay_tree_mem_p (ob->overlays_root, XOVERLAY (overlay)));
+      ot_delete(&ob->overlays_root, XOVERLAY (overlay));
 
       CHECK_TREE (ob->overlays_root);
       /* PRINT_TREE(ob->overlays_root); */
@@ -3861,7 +3859,7 @@ buffer.  */)
   struct Lisp_Overlay *o = XOVERLAY (overlay);
   o->buf = buffer;
   /* printf("inserting %p (%li to %li) in move\n", o, o->char_start, o->char_end); */
-  overlay_tree_insert(&b->overlays_root, o);
+  ot_insert(&b->overlays_root, o);
 
   return unbind_to (count, overlay);
 }
@@ -3888,7 +3886,7 @@ DEFUN ("delete-overlay", Fdelete_overlay, Sdelete_overlay, 1, 1, 0,
   /* PRINT_TREE(b->overlays_root); */
   CHECK_TREE (b->overlays_root);
   /* printf("Fdelete_overlay, tree=%p, *tree=%p\n", &b->overlays_root, b->overlays_root); */
-  overlay_tree_delete (&b->overlays_root, XOVERLAY (overlay), NULL);
+  ot_delete (&b->overlays_root, XOVERLAY (overlay));
   CHECK_TREE (b->overlays_root);
   /* printf("After deleting:\n"); */
   /* PRINT_TREE(b->overlays_root); */
@@ -3971,7 +3969,7 @@ If SORTED is non-nil, then sort them by decreasing priority.  */)
   len = 10;
   overlay_vec = xmalloc (len * sizeof *overlay_vec);
 
-  overlay_tree_at (current_buffer->overlays_root, XINT (pos), &len,
+  overlays_at_new (current_buffer->overlays_root, XINT (pos), &len,
                    &overlay_vec, &noverlays);
 
   if (!NILP (sorted))
@@ -4069,7 +4067,7 @@ the value is (point-max).  */)
 
   ptrdiff_t bufpos = XINT (pos);
   ptrdiff_t best = ZV - bufpos;
-  overlay_tree_next_change (current_buffer->overlays_root,
+  next_overlay_change_new (current_buffer->overlays_root,
                             bufpos, &best);
   return make_number (bufpos + best);
 }
@@ -4088,7 +4086,7 @@ the value is (point-min).  */)
 
   ptrdiff_t bufpos = XFASTINT (pos);
   ptrdiff_t best = bufpos - BEGV;
-  overlay_tree_prev_change (current_buffer->overlays_root,
+  ot_prev_change (current_buffer->overlays_root,
                             bufpos, &best);
   return make_number (bufpos - best);
 }
@@ -4474,7 +4472,7 @@ evaporate_overlays (ptrdiff_t pos)
   ptrdiff_t vec_size = 20, idx = 0;
   vec = xnmalloc (vec_size, sizeof (*vec));
   CHECK_TREE (current_buffer->overlays_root);
-  overlay_tree_evap (current_buffer->overlays_root, pos, &vec_size,
+  ot_evap (current_buffer->overlays_root, pos, &vec_size,
                      &vec, &idx);
   eassert (idx >= 0);
   for (ptrdiff_t i = 0; i < idx; i++)

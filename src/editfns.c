@@ -562,7 +562,7 @@ at POSITION.  */)
       ptrdiff_t overlay_vec_size = 40;
       overlay_vec = xnmalloc (overlay_vec_size,
                               sizeof (*overlay_vec));
-      overlay_tree_around (XBUFFER (object)->overlays_root,
+      overlays_around_new (XBUFFER (object)->overlays_root,
                            posn, &overlay_vec_size,
                            &overlay_vec, &noverlays);
 

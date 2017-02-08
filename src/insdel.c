@@ -917,7 +917,7 @@ insert_1_both (const char *string,
 			     PT + nchars, PT_BYTE + nbytes,
 			     before_markers);
 
-  overlay_tree_adjust_for_insert(&current_buffer->overlays_root, PT, PT
+  ot_adjust_for_insert(current_buffer->overlays_root, PT, PT
                                  + nchars, before_markers);
 
   offset_intervals (current_buffer, PT, nchars);
@@ -1048,7 +1048,7 @@ insert_from_string_1 (Lisp_Object string, ptrdiff_t pos, ptrdiff_t pos_byte,
 			     PT_BYTE + outgoing_nbytes,
 			     before_markers);
 
-  overlay_tree_adjust_for_insert(&current_buffer->overlays_root, PT,
+  ot_adjust_for_insert(current_buffer->overlays_root, PT,
                                  PT + nchars, before_markers);
 
 
@@ -1108,7 +1108,7 @@ insert_from_gap (ptrdiff_t nchars, ptrdiff_t nbytes, bool text_at_gap_tail)
   adjust_markers_for_insert (ins_charpos, ins_bytepos,
 			     ins_charpos + nchars, ins_bytepos + nbytes, 0);
 
-  overlay_tree_adjust_for_insert(&current_buffer->overlays_root,
+  ot_adjust_for_insert(current_buffer->overlays_root,
                                  ins_charpos, ins_charpos + nchars, 0);
 
 
@@ -1257,7 +1257,7 @@ insert_from_buffer_1 (struct buffer *buf,
 			     PT_BYTE + outgoing_nbytes,
 			     0);
 
-  overlay_tree_adjust_for_insert(&current_buffer->overlays_root, PT,
+  ot_adjust_for_insert(current_buffer->overlays_root, PT,
                                  PT + nchars, 0);
 
 
@@ -1314,14 +1314,14 @@ adjust_after_replace (ptrdiff_t from, ptrdiff_t from_byte,
     {
       adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
                                   len, len_byte);
-      overlay_tree_adjust_for_replace(&current_buffer->overlays_root,
+      ot_adjust_for_replace(current_buffer->overlays_root,
                                       from, nchars_del, len);
     }
   else
     {
       adjust_markers_for_insert (from, from_byte,
                                  from + len, from_byte + len_byte, 0);
-      overlay_tree_adjust_for_insert(&current_buffer->overlays_root,
+      ot_adjust_for_insert(current_buffer->overlays_root,
                                      from, from + len, 0);
     }
 
@@ -1510,7 +1510,7 @@ replace_range (ptrdiff_t from, ptrdiff_t to, Lisp_Object new,
     {
       adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
                                   inschars, outgoing_insbytes);
-      overlay_tree_adjust_for_replace (&current_buffer->overlays_root,
+      ot_adjust_for_replace (current_buffer->overlays_root,
                                        from, nchars_del, inschars);
     }
   else
@@ -1646,7 +1646,7 @@ replace_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
         {
           adjust_markers_for_replace (from, from_byte, nchars_del, nbytes_del,
                                       inschars, insbytes);
-          overlay_tree_adjust_for_replace (&current_buffer->overlays_root,
+          ot_adjust_for_replace (current_buffer->overlays_root,
                                            from, nchars_del, inschars);
         }
       else
@@ -1863,7 +1863,7 @@ del_range_2 (ptrdiff_t from, ptrdiff_t from_byte,
      at the end of the text before the gap.  */
   adjust_markers_for_delete (from, from_byte, to, to_byte);
   CHECK_TREE (current_buffer->overlays_root);
-  overlay_tree_adjust_for_delete(&current_buffer->overlays_root, from, to);
+  ot_adjust_for_delete(current_buffer->overlays_root, from, to);
   CHECK_TREE (current_buffer->overlays_root);
 
   MODIFF++;

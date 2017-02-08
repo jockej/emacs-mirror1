@@ -2207,6 +2207,7 @@ struct Lisp_Overlay
 
     Lisp_Object buf;
     struct Lisp_Overlay *left, *right;
+    struct Lisp_Overlay *parent;
     unsigned level;
   };
 

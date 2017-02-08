@@ -3593,7 +3593,7 @@ next_overlay_change (ptrdiff_t pos)
   return endpos;
 #endif
   ptrdiff_t next_chg = ZV - pos;
-  overlay_tree_next_change (current_buffer->overlays_root, pos,
+  next_overlay_change_new (current_buffer->overlays_root, pos,
                             &next_chg);
   /* printf("pos: %ld, next_change: %ld, ZV: %ld\n", pos, pos + next_chg, ZV); */
   return pos + next_chg;
@@ -5840,7 +5840,7 @@ load_overlay_strings (struct it *it, ptrdiff_t charpos)
   Lisp_Object *overlay_vec;
   overlay_vec = xnmalloc (overlay_vec_size,
                           sizeof (*overlay_vec));
-  overlay_tree_endpoint_at (current_buffer->overlays_root,
+  overlays_ending_at (current_buffer->overlays_root,
                             charpos, it->w, &overlay_vec_size,
                             &overlay_vec, &noverlays);
 

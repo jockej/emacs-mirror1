@@ -5921,7 +5921,7 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
     noverlays = overlays_at(pos, false, &overlay_vec,
                             &overlay_vec_size, NULL, NULL, false);
 
-    next = overlay_tree_next_start (current_buffer->overlays_root,
+    next = ot_next_start (current_buffer->overlays_root,
                                     pos);
     if (next != OVERLAY_SENTINEL)
       {
