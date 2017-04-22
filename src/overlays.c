@@ -128,7 +128,24 @@ check_valid_aa_tree (struct Lisp_Overlay *root, struct Lisp_Overlay *parent)
   check_valid_aa_tree (root->left, root);
   check_valid_aa_tree (root->right, root);
 }
+
+void check_parent_pointers(struct Lisp_Overlay *root)
+{
+  if (root == OVERLAY_SENTINEL)
+    return;
+
+  struct Lisp_Overlay *parent = root->parent;
+
+  eassert (!parent || (root == parent->right || root == parent->left));
+
+  check_parent_pointers(root->right);
+  check_parent_pointers(root->left);
+}
+#define CHECK_PARENTS(root) check_parent_pointers(root)
+#else
+#define CHECK_PARENTS(root)
 #endif
+
 
 /* Rebalancing.  See Andersson's paper for a good explanation.
 
@@ -148,6 +165,7 @@ ot_skew (struct Lisp_Overlay **tt)
       t = *tt = t->left;
       /* t = A, tmp = B */
       tmp->left = t->right;
+      tmp->left->parent = tmp;
       t->right = tmp;
       t->parent = tmp->parent;
       tmp->parent = t;
@@ -177,6 +195,7 @@ ot_split (struct Lisp_Overlay **tt)
       t = *tt = t->right;
       /* tmp = A, t = B, t->right = C */
       tmp->right = t->left;
+      t->left->parent = tmp;
       t->left = tmp;
       t->level++;
       eassert (t->level - 1 == tmp->level);
@@ -192,7 +211,7 @@ ot_split (struct Lisp_Overlay **tt)
 void
 print_tree(struct Lisp_Overlay *tree, unsigned level)
 {
-  eassert (level < 20);
+  eassert (level < 48);
   for (unsigned i = 0; i < level; i++)
     printf("  ");
   if (tree == OVERLAY_SENTINEL)
@@ -200,8 +219,8 @@ print_tree(struct Lisp_Overlay *tree, unsigned level)
       printf("nil\n");
       return;
     }
-  printf("%li to %li, max=%li, lvl=%u, %p\n", tree->char_start, tree->char_end,
-         tree->max, tree->level, tree);
+  printf("%li to %li, max=%li, lvl=%u, %p, parent=%p\n", tree->char_start, tree->char_end,
+         tree->max, tree->level, tree, tree->parent);
   print_tree(tree->right, level + 2);
   print_tree(tree->left, level + 2);
 }
@@ -221,21 +240,34 @@ ot_insert_internal (struct Lisp_Overlay **tree,
       node->max = node->char_end;
       node->parent = parent;
       *tree = node;
+      /* printf("Inserting %p with parent %p\n", node, parent); */
+      eassert (!parent || (node == parent->right || node == parent->left));
       return;
     }
   else
     {
       if (ot_lt (node, t))
         {
+          /* printf("Turning left at %p\n", t); */
           ot_insert_internal (&t->left, node, t);
         }
       else
         {
+          /* printf("Turning right at %p\n", t); */
           ot_insert_internal (&t->right, node, t);
         }
     }
+  /* printf("Inserted\n"); */
+  /* print_tree(*tree, 0); */
+  CHECK_PARENTS(*tree);
   ot_skew (tree);
+  /* printf("After skew\n"); */
+  /* print_tree(*tree, 0); */
+  CHECK_PARENTS(*tree);
   ot_split (tree);
+  /* printf("After split\n"); */
+  /* print_tree(*tree, 0); */
+  CHECK_PARENTS(*tree);
   t->max = ot_find_max (t);
 }
 
@@ -245,8 +277,11 @@ ot_insert (struct Lisp_Overlay **root,
            struct Lisp_Overlay *node)
 {
   CHECK_TREE (*root);
-  printf("INSERT\n");
+  /* printf("INSERT\n"); */
+  /* print_tree(*root, 0); */
   ot_insert_internal(root, node, NULL);
+  /* printf("After:\n"); */
+  /* print_tree(*root, 0); */
   CHECK_TREE (*root);
 }
 
@@ -288,11 +323,29 @@ rebalance_after_delete (struct Lisp_Overlay **tree)
       /* Andersson leaves it as 'an exercise for the reader' to
          prove that these rebalancing operations are enough.
          Don't you just love when that happens?  */
+      /* printf("REBALANCING\n"); */
+      /* print_tree(*tree, 0); */
+      /* CHECK_PARENTS(*tree); */
       ot_skew (tree);
+      /* printf("After first skew\n"); */
+      /* print_tree(*tree, 0); */
+      /* CHECK_PARENTS(*tree); */
       ot_skew (&(*tree)->right);
+      /* printf("After second skew\n"); */
+      /* print_tree(*tree, 0); */
+      /* CHECK_PARENTS(*tree); */
       ot_skew (&(*tree)->right->right);
+      /* printf("After third skew\n"); */
+      /* print_tree(*tree, 0); */
+      /* CHECK_PARENTS(*tree); */
       ot_split (tree);
+      /* printf("After first split\n"); */
+      /* print_tree(*tree, 0); */
+      /* CHECK_PARENTS(*tree); */
       ot_split (&(*tree)->right);
+      /* printf("After second split\n"); */
+      /* print_tree(*tree, 0); */
+      /* CHECK_PARENTS(*tree); */
     }
 }
 
@@ -315,8 +368,8 @@ replace_child (struct Lisp_Overlay *old, struct Lisp_Overlay *new,
                struct Lisp_Overlay **root)
 {
   eassert (old != OVERLAY_SENTINEL);
-  printf("Replacing %p as child of %p with %p as new child\n",
-         old, old->parent, new);
+  /* printf("Replacing %p as child of %p with %p as new child\n", */
+         /* old, old->parent, new); */
   if (old->parent == NULL)
     {
       eassert (*root == old);
@@ -325,12 +378,12 @@ replace_child (struct Lisp_Overlay *old, struct Lisp_Overlay *new,
     }
   if (ot_rchld_p (old))
     {
-      printf("%p was right child of %p\n", old, old->parent);
+      /* printf("%p was right child of %p\n", old, old->parent); */
       old->parent->right = new;
     }
   else
     {
-      printf("%p was left child of %p\n", old, old->parent);
+      /* printf("%p was left child of %p\n", old, old->parent); */
       old->parent->left = new;
     }
   if (new != OVERLAY_SENTINEL)
@@ -346,13 +399,14 @@ ot_delete (struct Lisp_Overlay **root, struct Lisp_Overlay *t)
   if (t == OVERLAY_SENTINEL)
     return;
 
-  printf("DELETE t = %p\n", t);
-  print_tree(*root, 0);
+  /* printf("DELETE t = %p\n", t); */
+  /* print_tree(*root, 0); */
+  CHECK_TREE(*root);
   /* Only node */
   if (t->left == OVERLAY_SENTINEL && t->right == OVERLAY_SENTINEL
       && t->parent == NULL)
     {
-      printf("%p was the only node\n", t);
+      /* printf("%p was the only node\n", t); */
       eassert (*root == t);
       *root = OVERLAY_SENTINEL;
       return;
@@ -372,31 +426,32 @@ ot_delete (struct Lisp_Overlay **root, struct Lisp_Overlay *t)
       repl = ot_succ (t);
       rebalancing_start = repl->parent == t ? repl : repl->parent;
     }
-  printf("repl = %p, we start rebalancing from %p\n", repl, rebalancing_start);
+  /* printf("repl = %p, we start rebalancing from %p\n", repl, rebalancing_start); */
 
-  printf("Replacing %p with %p as child\n", repl, repl->right);
+  /* printf("Replacing %p with %p as child\n", repl, repl->right); */
   replace_child (repl, repl->right, root);
   repl->level = t->level;
   repl->left = t->left;
   repl->right = t->right;
   repl->max = ot_find_max (repl);
   repl->left->parent = repl->right->parent = repl;
-  printf("Replacing %p with %p as child\n", t, repl);
+  /* printf("Replacing %p with %p as child\n", t, repl); */
 
  dostuff:
   replace_child (t, repl, root);
   for (t = rebalancing_start; t->parent; t = t->parent)
     {
       t->max = ot_find_max (t);
-      printf("Rebalancing around %p\n", t);
+      /* printf("Rebalancing around %p\n", t); */
       rebalance_after_delete (addr_of_parent_pointer (t));
-      printf("Gonna rebalance around %p next\n", t->parent);
+      /* printf("Gonna rebalance around %p next\n", t->parent); */
     }
   eassert (t == *root);
-  printf("Rebalancing around root\n");
+  /* printf("Rebalancing around root\n"); */
   rebalance_after_delete (root);
-  printf("DONE WITH DELETE\n");
-  print_tree(*root, 0);
+  /* printf("DONE WITH DELETE\n"); */
+  /* print_tree(*root, 0); */
+  CHECK_TREE(*root);
 }
 
 
@@ -703,15 +758,15 @@ ot_starting_at (struct Lisp_Overlay *tree, ptrdiff_t pos,
 
 }
 
-static ptrdiff_t
-adjust_tree_for_insert (struct Lisp_Overlay *tree, ptrdiff_t from_char,
-                        ptrdiff_t to_char, bool before,
-                        Lisp_Object **neg_size, ptrdiff_t *len,
-                        ptrdiff_t *idx)
-{
-  /* If we are at a leaf or all nodes in TREE are before the insert,
-   return.  */
-}
+/* static ptrdiff_t */
+/* adjust_tree_for_insert (struct Lisp_Overlay *tree, ptrdiff_t from_char, */
+/*                         ptrdiff_t to_char, bool before, */
+/*                         Lisp_Object **neg_size, ptrdiff_t *len, */
+/*                         ptrdiff_t *idx) */
+/* { */
+/*   /\* If we are at a leaf or all nodes in TREE are before the insert, */
+/*    return.  *\/ */
+/* } */
 
 
 /* Adjust all nodes in TREE for an insert from FROM_CHAR to TO_CHAR.
