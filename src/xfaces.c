@@ -5991,12 +5991,12 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
 	    }
 
 #ifdef OVERLAYS_REMOVE
-      oend = OVERLAY_END (overlay_vec[i]);
-      oendpos = OVERLAY_POSITION (oend);
+          oend = OVERLAY_END (overlay_vec[i]);
+          oendpos = OVERLAY_POSITION (oend);
 #endif
-      oendpos = XOVERLAY (overlay_vec[i])->char_end;
-      if (oendpos < endpos)
-	endpos = oendpos;
+          oendpos = XOVERLAY (overlay_vec[i])->char_end;
+          if (oendpos < endpos)
+            endpos = oendpos;
 	}
     }
   else
@@ -6010,8 +6010,12 @@ face_at_buffer_position (struct window *w, ptrdiff_t pos,
 	  if (!NILP (prop))
 	    merge_face_ref (f, prop, attrs, true, 0);
 
+#ifdef OVERLAYS_REMOVE
 	  oend = OVERLAY_END (overlay_vec[i]);
 	  oendpos = OVERLAY_POSITION (oend);
+#endif
+          oendpos = XOVERLAY (overlay_vec[i])->char_end;
+
 	  if (oendpos < endpos)
 	    endpos = oendpos;
 	}
