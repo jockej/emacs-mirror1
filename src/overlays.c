@@ -395,12 +395,13 @@ replace_child (struct Lisp_Overlay *old, struct Lisp_Overlay *new,
 void
 ot_delete (struct Lisp_Overlay **root, struct Lisp_Overlay *t)
 {
+  struct Lisp_Overlay *deleted = t;
   /* Some special cases */
   if (t == OVERLAY_SENTINEL)
     return;
 
   /* printf("DELETE t = %p\n", t); */
-  /* print_tree(*root, 0); */
+  /* PRINT_TREE(*root); */
   CHECK_TREE(*root);
   /* Only node */
   if (t->left == OVERLAY_SENTINEL && t->right == OVERLAY_SENTINEL
@@ -408,11 +409,12 @@ ot_delete (struct Lisp_Overlay **root, struct Lisp_Overlay *t)
     {
       /* printf("%p was the only node\n", t); */
       eassert (*root == t);
+      t->buf = Qnil;
       *root = OVERLAY_SENTINEL;
       return;
     }
 
-  /* REPL shall take t place in the tree.  */
+  /* REPL shall take t's place in the tree.  */
   struct Lisp_Overlay *repl;
   struct Lisp_Overlay *rebalancing_start;
   if (t->left == OVERLAY_SENTINEL && t->right == OVERLAY_SENTINEL)
@@ -435,25 +437,33 @@ ot_delete (struct Lisp_Overlay **root, struct Lisp_Overlay *t)
   repl->right = t->right;
   repl->max = ot_find_max (repl);
   repl->left->parent = repl->right->parent = repl;
+  repl->parent = t->parent;
   /* printf("Replacing %p with %p as child\n", t, repl); */
 
  dostuff:
   replace_child (t, repl, root);
+
   for (t = rebalancing_start; t->parent; t = t->parent)
     {
       t->max = ot_find_max (t);
       /* printf("Rebalancing around %p\n", t); */
       rebalance_after_delete (addr_of_parent_pointer (t));
+      /* PRINT_TREE(t); */
       /* printf("Gonna rebalance around %p next\n", t->parent); */
     }
-  eassert (t == *root);
+  /* eassert (t == *root); */
   /* printf("Rebalancing around root\n"); */
+  /* t->left = t->right = OVERLAY_SENTINEL; */
+  /* t->parent = NULL; */
+  /* t->level = 0; */
+  /* t->buf = Qnil; */
+  deleted->buf = Qnil;
+
   rebalance_after_delete (root);
   /* printf("DONE WITH DELETE\n"); */
   /* print_tree(*root, 0); */
   CHECK_TREE(*root);
 }
-
 
 /* Add ELM to vector VECP at IDX.  If necessary adjust SIZE.  */
 static void
@@ -731,7 +741,13 @@ ot_all (struct Lisp_Overlay *tree, ptrdiff_t *vec_size,
 Lisp_Object
 buffer_of_overlay (Lisp_Object overlay)
 {
-  return XOVERLAY (overlay)->buf;
+  Lisp_Object buffer = XOVERLAY (overlay)->buf;
+  if (NILP (buffer))
+    return Qnil;
+  else if (BUFFER_LIVE_P (XBUFFER (buffer)))
+    return buffer;
+  else
+    return Qnil;
 }
 
 /* Adjust CHARPOS for an insert from FROM_CHAR to TO_CHAR.  */
