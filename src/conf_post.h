@@ -1,6 +1,6 @@
 /* conf_post.h --- configure.ac includes this via AH_BOTTOM
 
-Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2016 Free Software
+Copyright (C) 1988, 1993-1994, 1999-2002, 2004-2017 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -94,17 +94,11 @@ typedef bool bool_bf;
 #endif
 
 #ifdef DARWIN_OS
-#ifdef emacs
+#if defined emacs && !defined CANNOT_DUMP
 #define malloc unexec_malloc
 #define realloc unexec_realloc
 #define free unexec_free
 #endif
-/* The following solves the problem that Emacs hangs when evaluating
-   (make-comint "test0" "/nodir/nofile" nil "") when /nodir/nofile
-   does not exist.  Also, setsid is not allowed in the vfork child's
-   context as of Darwin 9/Mac OS X 10.5.  */
-#undef HAVE_WORKING_VFORK
-#define vfork fork
 #endif  /* DARWIN_OS */
 
 /* If HYBRID_MALLOC is defined (e.g., on Cygwin), emacs will use

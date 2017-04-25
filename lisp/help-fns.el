@@ -1,6 +1,6 @@
 ;;; help-fns.el --- Complex help functions -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1986, 1993-1994, 1998-2016 Free Software
+;; Copyright (C) 1985-1986, 1993-1994, 1998-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -73,7 +73,7 @@ The functions will receive the function name as argument.")
       (let* ((re (load-history-regexp file))
              (done nil))
         (dolist (x load-history)
-          (if (string-match-p re (car x)) (setq done t)))
+          (and (car x) (string-match-p re (car x)) (setq done t)))
         done)))
 
 (defun help--load-prefixes (prefixes)
@@ -115,13 +115,15 @@ When called from lisp, FUNCTION may also be a function object."
                 (if fn
                     (format "Describe function (default %s): " fn)
                   "Describe function: ")
-                #'help--symbol-completion-table #'fboundp t nil nil
+                #'help--symbol-completion-table
+                (lambda (f) (or (fboundp f) (get f 'function-documentation)))
+                t nil nil
                 (and fn (symbol-name fn)))))
      (unless (equal val "")
        (setq fn (intern val)))
      (unless (and fn (symbolp fn))
        (user-error "You didn't specify a function symbol"))
-     (unless (fboundp fn)
+     (unless (or (fboundp fn) (get fn 'function-documentation))
        (user-error "Symbol's function definition is void: %s" fn))
      (list fn)))
 
@@ -144,7 +146,9 @@ When called from lisp, FUNCTION may also be a function object."
 
     (save-excursion
       (with-help-window (help-buffer)
-        (prin1 function)
+        (if (get function 'reader-construct)
+            (princ function)
+          (prin1 function))
         ;; Use " is " instead of a colon so that
         ;; it is easier to get out the function name using forward-sexp.
         (princ " is ")
@@ -387,12 +391,12 @@ suitable file is found, return nil."
               ;; If lots of ordinary text characters run this command,
               ;; don't mention them one by one.
               (if (< (length non-modified-keys) 10)
-                  (princ (mapconcat 'key-description keys ", "))
+                  (princ (mapconcat #'key-description keys ", "))
                 (dolist (key non-modified-keys)
                   (setq keys (delq key keys)))
                 (if keys
                     (progn
-                      (princ (mapconcat 'key-description keys ", "))
+                      (princ (mapconcat #'key-description keys ", "))
                       (princ ", and many ordinary text characters"))
                   (princ "many ordinary text characters"))))
             (when (or remapped keys non-modified-keys)
@@ -469,7 +473,9 @@ suitable file is found, return nil."
         (let ((fill-begin (point))
               (high-usage (car high))
               (high-doc (cdr high)))
-          (insert high-usage "\n")
+          (unless (and (symbolp function)
+                       (get function 'reader-construct))
+            (insert high-usage "\n"))
           (fill-region fill-begin (point))
           high-doc)))))
 
@@ -565,18 +571,21 @@ FILE is the file where FUNCTION was probably defined."
 	  (or (and advised
                    (advice--cd*r (advice--symbol-function function)))
 	      function))
-	 ;; Get the real definition.
+	 ;; Get the real definition, if any.
 	 (def (if (symbolp real-function)
-		  (or (symbol-function real-function)
-		      (signal 'void-function (list real-function)))
+                  (cond ((symbol-function real-function))
+                        ((get real-function 'function-documentation)
+                         nil)
+                        (t (signal 'void-function (list real-function))))
 		real-function))
-	 (aliased (or (symbolp def)
-		      ;; Advised & aliased function.
-		      (and advised (symbolp real-function)
-			   (not (eq 'autoload (car-safe def))))
-                      (and (subrp def)
-                           (not (string= (subr-name def)
-                                         (symbol-name function))))))
+	 (aliased (and def
+                       (or (symbolp def)
+                           ;; Advised & aliased function.
+                           (and advised (symbolp real-function)
+                                (not (eq 'autoload (car-safe def))))
+                           (and (subrp def)
+                                (not (string= (subr-name def)
+                                              (symbol-name function)))))))
 	 (real-def (cond
                     ((and aliased (not (subrp def)))
                      (let ((f real-function))
@@ -605,6 +614,9 @@ FILE is the file where FUNCTION was probably defined."
     ;; Print what kind of function-like object FUNCTION is.
     (princ (cond ((or (stringp def) (vectorp def))
 		  "a keyboard macro")
+		 ((and (symbolp function)
+                       (get function 'reader-construct))
+                  "a reader construct")
 		 ;; Aliases are Lisp functions, so we need to check
 		 ;; aliases before functions.
 		 (aliased
@@ -832,17 +844,24 @@ it is displayed along with the global value."
 		(let ((line-beg (line-beginning-position))
 		      (print-rep
 		       (let ((rep
-			      (let ((print-quoted t))
-				(prin1-to-string val))))
+			      (let ((print-quoted t)
+                                    (print-circle t))
+				(cl-prin1-to-string val))))
 			 (if (and (symbolp val) (not (booleanp val)))
 			     (format-message "`%s'" rep)
 			   rep))))
 		  (if (< (+ (length print-rep) (point) (- line-beg)) 68)
 		      (insert " " print-rep)
 		    (terpri)
-		    (pp val)
+                    (let ((buf (current-buffer)))
+                      (with-temp-buffer
+                        (insert print-rep)
+                        (pp-buffer)
+                        (let ((pp-buffer (current-buffer)))
+                          (with-current-buffer buf
+                            (insert-buffer-substring pp-buffer)))))
                     ;; Remove trailing newline.
-                    (delete-char -1))
+                    (and (= (char-before) ?\n) (delete-char -1)))
 		  (let* ((sv (get variable 'standard-value))
 			 (origval (and (consp sv)
 				       (condition-case nil
@@ -1079,8 +1098,8 @@ frame to show the information about SYMBOL; they default to the
 current buffer and the selected frame, respectively."
   (interactive
    (let* ((v-or-f (symbol-at-point))
-          (found (cl-some (lambda (x) (funcall (nth 1 x) v-or-f))
-                          describe-symbol-backends))
+          (found (if v-or-f (cl-some (lambda (x) (funcall (nth 1 x) v-or-f))
+                                     describe-symbol-backends)))
           (v-or-f (if found v-or-f (function-called-at-point)))
           (found (or found v-or-f))
           (enable-recursive-minibuffers t)

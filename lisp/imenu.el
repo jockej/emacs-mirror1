@@ -1,6 +1,6 @@
 ;;; imenu.el --- framework for mode-specific buffer indexes  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1994-1998, 2001-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1998, 2001-2017 Free Software Foundation, Inc.
 
 ;; Author: Ake Stenhoff <etxaksf@aom.ericsson.se>
 ;;         Lars Lindberg <lli@sypro.cap.se>
@@ -499,7 +499,12 @@ An item looks like (NAME . POSITION)."
   (string-lessp (car item1) (car item2)))
 
 (defun imenu--sort-by-position (item1 item2)
-  (< (cdr item1) (cdr item2)))
+  "Comparison function to sort items depending on their position.
+Return non-nil if and only if ITEM1's position is lower than ITEM2's
+position."
+  (if (listp (cdr item1))
+      (< (cadr item1) (cadr item2))
+    (< (cdr item1) (cdr item2))))
 
 (defun imenu--relative-position (&optional reverse)
   "Support function to calculate relative position in buffer.

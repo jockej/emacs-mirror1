@@ -1,6 +1,6 @@
 /* Synchronous subprocess invocation for GNU Emacs.
 
-Copyright (C) 1985-1988, 1993-1995, 1999-2016 Free Software Foundation,
+Copyright (C) 1985-1988, 1993-1995, 1999-2017 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -32,7 +32,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "lisp.h"
 
 #ifdef WINDOWSNT
-#define NOMINMAX
 #include <sys/socket.h>	/* for fcntl */
 #include <windows.h>
 #include "w32.h"
@@ -53,6 +52,8 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 #include "syswait.h"
 #include "blockinput.h"
 #include "frame.h"
+#include "systty.h"
+#include "keyboard.h"
 
 #ifdef MSDOS
 #include "msdos.h"
@@ -199,11 +200,11 @@ call_process_cleanup (Lisp_Object buffer)
     {
       kill (-synch_process_pid, SIGINT);
       message1 ("Waiting for process to die...(type C-g again to kill it instantly)");
-      immediate_quit = 1;
-      QUIT;
+
+      /* This will quit on C-g.  */
       wait_for_termination (synch_process_pid, 0, 1);
+
       synch_process_pid = 0;
-      immediate_quit = 0;
       message1 ("Waiting for process to die...done");
     }
 #endif	/* !MSDOS */
@@ -627,7 +628,18 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
     {
       unblock_child_signal (&oldset);
 
+#ifdef DARWIN_OS
+      /* Darwin doesn't let us run setsid after a vfork, so use
+         TIOCNOTTY when necessary. */
+      int j = emacs_open (DEV_TTY, O_RDWR, 0);
+      if (j >= 0)
+        {
+          ioctl (j, TIOCNOTTY, 0);
+          emacs_close (j);
+        }
+#else
       setsid ();
+#endif
 
       /* Emacs ignores SIGPIPE, but the child should not.  */
       signal (SIGPIPE, SIG_DFL);
@@ -727,9 +739,6 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
       process_coding.src_multibyte = 0;
     }
 
-  immediate_quit = 1;
-  QUIT;
-
   if (0 <= fd0)
     {
       enum { CALLPROC_BUFFER_SIZE_MIN = 16 * 1024 };
@@ -750,8 +759,8 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
 	  nread = carryover;
 	  while (nread < bufsize - 1024)
 	    {
-	      int this_read = emacs_read (fd0, buf + nread,
-					  bufsize - nread);
+	      int this_read = emacs_read_quit (fd0, buf + nread,
+					       bufsize - nread);
 
 	      if (this_read < 0)
 		goto give_up;
@@ -770,7 +779,6 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
 	    }
 
 	  /* Now NREAD is the total amount of data in the buffer.  */
-	  immediate_quit = 0;
 
 	  if (!nread)
 	    ;
@@ -843,8 +851,6 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
 		 we should have already detected a coding system.  */
 	      display_on_the_fly = true;
 	    }
-	  immediate_quit = true;
-	  QUIT;
 	}
     give_up: ;
 
@@ -860,8 +866,6 @@ call_process (ptrdiff_t nargs, Lisp_Object *args, int filefd,
   /* Wait for it to terminate, unless it already has.  */
   wait_for_termination (pid, &status, fd0 < 0);
 #endif
-
-  immediate_quit = 0;
 
   /* Don't kill any children that the subprocess may have left behind
      when exiting.  */
@@ -1390,7 +1394,7 @@ getenv_internal (const char *var, ptrdiff_t varlen, char **value,
      without recording them in Vprocess_environment.  */
 #ifdef WINDOWSNT
   {
-    char* tmpval = getenv (var);
+    char *tmpval = getenv (var);
     if (tmpval)
       {
         *value = tmpval;
@@ -1593,13 +1597,14 @@ init_callproc (void)
   sh = getenv ("SHELL");
   Vshell_file_name = build_string (sh ? sh : "/bin/sh");
 
-#ifdef DOS_NT
-  Vshared_game_score_directory = Qnil;
-#else
-  Vshared_game_score_directory = build_unibyte_string (PATH_GAME);
-  if (NILP (Ffile_accessible_directory_p (Vshared_game_score_directory)))
-    Vshared_game_score_directory = Qnil;
-#endif
+  Lisp_Object gamedir = Qnil;
+  if (PATH_GAME)
+    {
+      Lisp_Object path_game = build_unibyte_string (PATH_GAME);
+      if (file_accessible_directory_p (path_game))
+	gamedir = path_game;
+    }
+  Vshared_game_score_directory = gamedir;
 }
 
 void
@@ -1670,11 +1675,6 @@ includes this.  */);
   DEFVAR_LISP ("shared-game-score-directory", Vshared_game_score_directory,
 	       doc: /* Directory of score files for games which come with GNU Emacs.
 If this variable is nil, then Emacs is unable to use a shared directory.  */);
-#ifdef DOS_NT
-  Vshared_game_score_directory = Qnil;
-#else
-  Vshared_game_score_directory = build_string (PATH_GAME);
-#endif
 
   DEFVAR_LISP ("initial-environment", Vinitial_environment,
 	       doc: /* List of environment variables inherited from the parent process.

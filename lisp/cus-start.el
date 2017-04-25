@@ -1,6 +1,6 @@
 ;;; cus-start.el --- define customization properties of builtins  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1997, 1999-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1997, 1999-2017 Free Software Foundation, Inc.
 
 ;; Author: Per Abrahamsen <abraham@dina.kvl.dk>
 ;; Keywords: internal
@@ -286,7 +286,11 @@ Leaving \"Default\" unchecked is equivalent with specifying a default of
 	     ;; fns.c
 	     (use-dialog-box menu boolean "21.1")
 	     (use-file-dialog menu boolean "22.1")
-	     (focus-follows-mouse frames boolean "20.3")
+	     (focus-follows-mouse
+              frames (choice
+                      (const :tag "Off (nil)" :value nil)
+                      (const :tag "On (t)" :value t)
+                      (const :tag "Auto-raise" :value auto-raise)) "26.1")
 	     ;; fontset.c
 	     ;; FIXME nil is the initial value, fontset.el setqs it.
 	     (vertical-centering-font-regexp display
@@ -511,6 +515,7 @@ since it could result in memory overflow and make Emacs crash."
 	     (scroll-step windows integer)
 	     (scroll-conservatively windows integer)
 	     (scroll-margin windows integer)
+             (maximum-scroll-margin windows float "26.1")
 	     (hscroll-margin windows integer "22.1")
 	     (hscroll-step windows number "22.1")
 	     (truncate-partial-width-windows

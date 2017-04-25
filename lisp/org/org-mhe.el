@@ -1,6 +1,6 @@
 ;;; org-mhe.el --- Support for links to MH-E messages from within Org-mode
 
-;; Copyright (C) 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2017 Free Software Foundation, Inc.
 
 ;; Author: Thomas Baumann <thomas dot baumann at ch dot tum dot de>
 ;; Keywords: outlines, hypermedia, calendar, wp
@@ -212,7 +212,7 @@ folders."
 	  (mh-search folder (list "--message-id" article))
 	  (when (and org-mhe-search-all-folders
 		     (not (org-mhe-get-message-real-folder)))
-	    (kill-this-buffer)
+	    (kill-current-buffer)
 	    (mh-search "+" (list "--message-id" article))))
       (if mh-search-regexp-builder
 	  (mh-search "+" (funcall mh-search-regexp-builder
@@ -220,7 +220,7 @@ folders."
 	(mh-search "+" article)))
     (if (org-mhe-get-message-real-folder)
 	(mh-show-msg 1)
-      (kill-this-buffer)
+      (kill-current-buffer)
       (error "Message not found"))))
 
 (provide 'org-mhe)

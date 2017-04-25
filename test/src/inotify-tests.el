@@ -1,6 +1,6 @@
 ;;; inotify-tests.el --- Test suite for inotify. -*- lexical-binding: t -*-
 
-;; Copyright (C) 2012-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2017 Free Software Foundation, Inc.
 
 ;; Author: Rüdiger Sonderfeld <ruediger@c-plusplus.de>
 ;; Keywords:       internal
@@ -27,6 +27,13 @@
 
 (declare-function inotify-add-watch "inotify.c" (file-name aspect callback))
 (declare-function inotify-rm-watch "inotify.c" (watch-descriptor))
+
+(ert-deftest inotify-valid-p-simple ()
+  "Simple tests for `inotify-valid-p'."
+  (skip-unless (featurep 'inotify))
+  (should-not (inotify-valid-p 0))
+  (should-not (inotify-valid-p nil))
+  (should-not (inotify-valid-p '(0 . 0))))
 
 ;; (ert-deftest filewatch-file-watch-aspects-check ()
 ;;   "Test whether `file-watch' properly checks the aspects."
@@ -56,7 +63,9 @@
 	      (insert "Foo\n"))
 	    (read-event nil nil 5)
 	    (should (> events 0)))
+	(should (inotify-valid-p wd))
 	(inotify-rm-watch wd)
+	(should-not (inotify-valid-p wd))
 	(delete-file temp-file)))))
 
 (provide 'inotify-tests)

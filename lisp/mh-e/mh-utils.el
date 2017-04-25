@@ -1,6 +1,6 @@
 ;;; mh-utils.el --- MH-E general utilities
 
-;; Copyright (C) 1993, 1995, 1997, 2000-2016 Free Software Foundation,
+;; Copyright (C) 1993, 1995, 1997, 2000-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Bill Wohler <wohler@newt.com>
@@ -349,10 +349,8 @@ the cursor is not pointing to a message."
            (string-to-number (buffer-substring (match-beginning 1)
                                                (match-end 1))))
           (error-if-no-message
-           (error "Cursor not pointing to message"))
+           (user-error "Cursor not pointing to message"))
           (t nil))))
-
-(add-to-list 'debug-ignored-errors "^Cursor not pointing to message$")
 
 
 

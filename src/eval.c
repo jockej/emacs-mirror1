@@ -1,6 +1,6 @@
 /* Evaluator for GNU Emacs Lisp interpreter.
 
-Copyright (C) 1985-1987, 1993-1995, 1999-2016 Free Software Foundation,
+Copyright (C) 1985-1987, 1993-1995, 1999-2017 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -716,10 +716,11 @@ can be referred to by the Emacs help facilities and other programming
 tools.  The `defvar' form also declares the variable as \"special\",
 so that it is always dynamically bound even if `lexical-binding' is t.
 
-The optional argument INITVALUE is evaluated, and used to set SYMBOL,
-only if SYMBOL's value is void.  If SYMBOL is buffer-local, its
-default value is what is set; buffer-local values are not affected.
-If INITVALUE is missing, SYMBOL's value is not set.
+If SYMBOL's value is void and the optional argument INITVALUE is
+provided, INITVALUE is evaluated and the result used to set SYMBOL's
+value.  If SYMBOL is buffer-local, its default value is what is set;
+buffer-local values are not affected.  If INITVALUE is missing,
+SYMBOL's value is not set.
 
 If SYMBOL has a local binding, then this form affects the local
 binding.  This is usually not what you want.  Thus, if you need to
@@ -855,10 +856,9 @@ usage: (let* VARLIST BODY...)  */)
 
   lexenv = Vinternal_interpreter_environment;
 
-  varlist = XCAR (args);
-  while (CONSP (varlist))
+  for (varlist = XCAR (args); CONSP (varlist); varlist = XCDR (varlist))
     {
-      QUIT;
+      maybe_quit ();
 
       elt = XCAR (varlist);
       if (SYMBOLP (elt))
@@ -892,9 +892,8 @@ usage: (let* VARLIST BODY...)  */)
 	}
       else
 	specbind (var, val);
-
-      varlist = XCDR (varlist);
     }
+  CHECK_LIST_END (varlist, XCAR (args));
 
   val = Fprogn (XCDR (args));
   return unbind_to (count, val);
@@ -916,6 +915,7 @@ usage: (let VARLIST BODY...)  */)
   USE_SAFE_ALLOCA;
 
   varlist = XCAR (args);
+  CHECK_LIST (varlist);
 
   /* Make space to hold the values to give the bound variables.  */
   elt = Flength (varlist);
@@ -925,7 +925,7 @@ usage: (let VARLIST BODY...)  */)
 
   for (argnum = 0; CONSP (varlist); varlist = XCDR (varlist))
     {
-      QUIT;
+      maybe_quit ();
       elt = XCAR (varlist);
       if (SYMBOLP (elt))
 	temps [argnum++] = Qnil;
@@ -978,7 +978,7 @@ usage: (while TEST BODY...)  */)
   body = XCDR (args);
   while (!NILP (eval_sub (test)))
     {
-      QUIT;
+      maybe_quit ();
       prog_ignore (body);
     }
 
@@ -1011,7 +1011,7 @@ definitions to shadow the loaded ones for use in file byte-compilation.  */)
 	 until we get a symbol that is not an alias.  */
       while (SYMBOLP (def))
 	{
-	  QUIT;
+	  maybe_quit ();
 	  sym = def;
 	  tem = Fassq (sym, environment);
 	  if (NILP (tem))
@@ -1089,8 +1089,8 @@ internal_catch (Lisp_Object tag,
   if (! sys_setjmp (c->jmp))
     {
       Lisp_Object val = func (arg);
-      clobbered_eassert (handlerlist == c);
-      handlerlist = handlerlist->next;
+      eassert (handlerlist == c);
+      handlerlist = c->next;
       return val;
     }
   else
@@ -1131,7 +1131,6 @@ unwind_to_catch (struct handler *catch, Lisp_Object value)
   /* Restore certain special C variables.  */
   set_poll_suppress_count (catch->poll_suppress_count);
   unblock_input_to (catch->interrupt_input_blocked);
-  immediate_quit = 0;
 
   do
     {
@@ -1323,8 +1322,8 @@ internal_condition_case (Lisp_Object (*bfun) (void), Lisp_Object handlers,
   else
     {
       Lisp_Object val = bfun ();
-      clobbered_eassert (handlerlist == c);
-      handlerlist = handlerlist->next;
+      eassert (handlerlist == c);
+      handlerlist = c->next;
       return val;
     }
 }
@@ -1347,8 +1346,8 @@ internal_condition_case_1 (Lisp_Object (*bfun) (Lisp_Object), Lisp_Object arg,
   else
     {
       Lisp_Object val = bfun (arg);
-      clobbered_eassert (handlerlist == c);
-      handlerlist = handlerlist->next;
+      eassert (handlerlist == c);
+      handlerlist = c->next;
       return val;
     }
 }
@@ -1374,8 +1373,8 @@ internal_condition_case_2 (Lisp_Object (*bfun) (Lisp_Object, Lisp_Object),
   else
     {
       Lisp_Object val = bfun (arg1, arg2);
-      clobbered_eassert (handlerlist == c);
-      handlerlist = handlerlist->next;
+      eassert (handlerlist == c);
+      handlerlist = c->next;
       return val;
     }
 }
@@ -1403,8 +1402,8 @@ internal_condition_case_n (Lisp_Object (*bfun) (ptrdiff_t, Lisp_Object *),
   else
     {
       Lisp_Object val = bfun (nargs, args);
-      clobbered_eassert (handlerlist == c);
-      handlerlist = handlerlist->next;
+      eassert (handlerlist == c);
+      handlerlist = c->next;
       return val;
     }
 }
@@ -1450,7 +1449,7 @@ static Lisp_Object find_handler_clause (Lisp_Object, Lisp_Object);
 static bool maybe_call_debugger (Lisp_Object conditions, Lisp_Object sig,
 				 Lisp_Object data);
 
-void
+static void
 process_quit_flag (void)
 {
   Lisp_Object flag = Vquit_flag;
@@ -1460,6 +1459,28 @@ process_quit_flag (void)
   if (EQ (Vthrow_on_input, flag))
     Fthrow (Vthrow_on_input, Qt);
   quit ();
+}
+
+/* Check quit-flag and quit if it is non-nil.  Typing C-g does not
+   directly cause a quit; it only sets Vquit_flag.  So the program
+   needs to call maybe_quit at times when it is safe to quit.  Every
+   loop that might run for a long time or might not exit ought to call
+   maybe_quit at least once, at a safe place.  Unless that is
+   impossible, of course.  But it is very desirable to avoid creating
+   loops where maybe_quit is impossible.
+
+   If quit-flag is set to `kill-emacs' the SIGINT handler has received
+   a request to exit Emacs when it is safe to do.
+
+   When not quitting, process any pending signals.  */
+
+void
+maybe_quit (void)
+{
+  if (!NILP (Vquit_flag) && NILP (Vinhibit_quit))
+    process_quit_flag ();
+  else if (pending_signals)
+    process_pending_signals ();
 }
 
 DEFUN ("signal", Fsignal, Ssignal, 2, 2, 0,
@@ -1505,10 +1526,9 @@ signal_or_quit (Lisp_Object error_symbol, Lisp_Object data, bool keyboard_quit)
   Lisp_Object string;
   Lisp_Object real_error_symbol
     = (NILP (error_symbol) ? Fcar (data) : error_symbol);
-  register Lisp_Object clause = Qnil;
+  Lisp_Object clause = Qnil;
   struct handler *h;
 
-  immediate_quit = 0;
   if (gc_in_progress || waiting_for_input)
     emacs_abort ();
 
@@ -1861,8 +1881,7 @@ then strings and vectors are not accepted.  */)
      have an element whose index is COMPILED_INTERACTIVE, which is
      where the interactive spec is stored.  */
   else if (COMPILEDP (fun))
-    return ((ASIZE (fun) & PSEUDOVECTOR_SIZE_MASK) > COMPILED_INTERACTIVE
-	    ? Qt : if_prop);
+    return (PVSIZE (fun) > COMPILED_INTERACTIVE ? Qt : if_prop);
 
   /* Strings and vectors are keyboard macros.  */
   if (STRINGP (fun) || VECTORP (fun))
@@ -1955,28 +1974,6 @@ it defines a macro.  */)
 
   if (!CONSP (fundef) || !EQ (Qautoload, XCAR (fundef)))
     return fundef;
-
-  /* In the special case that we are generating ldefs-boot-auto.el,
-     then be noisy about the autoload. */
-  if( generating_ldefs_boot )
-    {
-      fprintf(stderr, "(autoload '");
-      Fprin1(funname,Qexternal_debugging_output);
-      fprintf(stderr, " ");
-      Fprin1(Fcar (Fcdr (fundef)),Qexternal_debugging_output);
-      fprintf(stderr, " nil nil ");
-
-      Lisp_Object kind = Fnth (make_number (4), fundef);
-      if (! (EQ (kind, Qt) || EQ (kind, Qmacro)))
-        {
-          fprintf(stderr, "nil");
-        }
-      else
-        {
-          fprintf(stderr, "t");
-        }
-      fprintf(stderr, ")\n");
-    }
 
   if (EQ (macro_only, Qmacro))
     {
@@ -2126,7 +2123,7 @@ eval_sub (Lisp_Object form)
   if (!CONSP (form))
     return form;
 
-  QUIT;
+  maybe_quit ();
 
   maybe_gc ();
 
@@ -2712,7 +2709,7 @@ usage: (funcall FUNCTION &rest ARGUMENTS)  */)
   Lisp_Object val;
   ptrdiff_t count;
 
-  QUIT;
+  maybe_quit ();
 
   if (++lisp_eval_depth > max_lisp_eval_depth)
     {
@@ -2924,7 +2921,7 @@ funcall_lambda (Lisp_Object fun, ptrdiff_t nargs,
     }
   else if (COMPILEDP (fun))
     {
-      ptrdiff_t size = ASIZE (fun) & PSEUDOVECTOR_SIZE_MASK;
+      ptrdiff_t size = PVSIZE (fun);
       if (size <= COMPILED_STACK_DEPTH)
 	xsignal1 (Qinvalid_function, fun);
       syms_left = AREF (fun, COMPILED_ARGLIST);
@@ -2957,7 +2954,7 @@ funcall_lambda (Lisp_Object fun, ptrdiff_t nargs,
   bool previous_optional_or_rest = false;
   for (; CONSP (syms_left); syms_left = XCDR (syms_left))
     {
-      QUIT;
+      maybe_quit ();
 
       next = XCAR (syms_left);
       if (!SYMBOLP (next))
@@ -3095,7 +3092,7 @@ lambda_arity (Lisp_Object fun)
       if (EQ (XCAR (fun), Qclosure))
 	{
 	  fun = XCDR (fun);	/* Drop `closure'.  */
-	  CHECK_LIST_CONS (fun, fun);
+	  CHECK_CONS (fun);
 	}
       syms_left = XCDR (fun);
       if (CONSP (syms_left))
@@ -3105,7 +3102,7 @@ lambda_arity (Lisp_Object fun)
     }
   else if (COMPILEDP (fun))
     {
-      ptrdiff_t size = ASIZE (fun) & PSEUDOVECTOR_SIZE_MASK;
+      ptrdiff_t size = PVSIZE (fun);
       if (size <= COMPILED_STACK_DEPTH)
 	xsignal1 (Qinvalid_function, fun);
       syms_left = AREF (fun, COMPILED_ARGLIST);
@@ -3150,7 +3147,7 @@ DEFUN ("fetch-bytecode", Ffetch_bytecode, Sfetch_bytecode,
 
   if (COMPILEDP (object))
     {
-      ptrdiff_t size = ASIZE (object) & PSEUDOVECTOR_SIZE_MASK;
+      ptrdiff_t size = PVSIZE (object);
       if (size <= COMPILED_STACK_DEPTH)
 	xsignal1 (Qinvalid_function, object);
       if (CONSP (AREF (object, COMPILED_BYTECODE)))
@@ -3189,18 +3186,6 @@ let_shadows_buffer_binding_p (struct Lisp_Symbol *symbol)
 	    && EQ (specpdl_where (p), buf))
 	  return 1;
       }
-
-  return 0;
-}
-
-bool
-let_shadows_global_binding_p (Lisp_Object symbol)
-{
-  union specbinding *p;
-
-  for (p = specpdl_ptr; p > specpdl; )
-    if ((--p)->kind >= SPECPDL_LET && EQ (specpdl_symbol (p), symbol))
-      return 1;
 
   return 0;
 }

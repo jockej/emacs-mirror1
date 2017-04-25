@@ -1,6 +1,6 @@
 ;; info.el --- Info package for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1986, 1992-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1985-1986, 1992-2017 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: help
@@ -358,17 +358,17 @@ with wrapping around the current Info node."
   ;; Try to obey obsolete Info-fontify settings.
   (unless (and (boundp 'Info-fontify) (null Info-fontify))
     '(turn-on-font-lock))
-  "Hooks run when `Info-mode' is called."
+  "Hook run when activating Info Mode."
   :type 'hook
   :group 'info)
 
 (defcustom Info-selection-hook nil
-  "Hooks run when `Info-select-node' is called."
+  "Hook run when an Info node is selected as the current node."
   :type 'hook
   :group 'info)
 
 (defvar Info-edit-mode-hook nil
-  "Hooks run when `Info-edit-mode' is called.")
+  "Hook run when `Info-edit-mode' is activated.")
 
 (make-obsolete-variable 'Info-edit-mode-hook
 			"editing Info nodes by hand is not recommended." "24.4")
@@ -1599,6 +1599,16 @@ escaped (\\\",\\\\)."
 	    parameter-alist))
     parameter-alist))
 
+(defun Info-node-description (file)
+  (cond
+   ((equal file "dir") "*Info Directory*")
+   ((eq file 'apropos) "*Info Apropos*")
+   ((eq file 'history) "*Info History*")
+   ((eq file 'toc)     "*Info TOC*")
+   ((not (stringp file)) "") ; Avoid errors
+   (t
+    (concat "(" (file-name-nondirectory file) ") " Info-current-node))))
+
 (defun Info-display-images-node ()
   "Display images in current node."
   (save-excursion
@@ -1693,6 +1703,7 @@ escaped (\\\",\\\\)."
 	  (setq Info-history-forward nil))
 	(if (not (eq Info-fontify-maximum-menu-size nil))
             (Info-fontify-node))
+        (setq list-buffers-directory (Info-node-description Info-current-file))
 	(Info-display-images-node)
 	(Info-hide-cookies-node)
 	(run-hooks 'Info-selection-hook)))))
@@ -1858,7 +1869,7 @@ a node in FILENAME.  \"(FILENAME)\" is a short format to go to
 the Top node in FILENAME."
   (let* ((completion-ignore-case t)
 	 (Info-read-node-completion-table (Info-build-node-completions))
-	 (nodename (completing-read prompt 'Info-read-node-name-1 nil t)))
+	 (nodename (completing-read prompt #'Info-read-node-name-1 nil t)))
     (if (equal nodename "")
 	(Info-read-node-name prompt)
       nodename)))
@@ -1987,19 +1998,20 @@ If DIRECTION is `backward', search in the reverse direction."
                   Info-isearch-initial-node
                   bound
                   (and found (> found opoint-min) (< found opoint-max)))
-	(signal 'search-failed (list regexp "end of node")))
+	(signal 'user-search-failed (list regexp "(end of node)")))
 
       ;; If no subfiles, give error now.
       (unless (or found Info-current-subfile)
         (if isearch-mode
-            (signal 'search-failed (list regexp "end of manual"))
+            (signal 'user-search-failed (list regexp "end of manual"))
           (let ((search-spaces-regexp Info-search-whitespace-regexp))
-            (if backward
-                (re-search-backward regexp)
-              (re-search-forward regexp)))))
+            (unless (if backward
+                        (re-search-backward regexp nil t)
+                      (re-search-forward regexp nil t))
+              (signal 'user-search-failed (list regexp))))))
 
       (if (and bound (not found))
-	  (signal 'search-failed (list regexp)))
+          (signal 'user-search-failed (list regexp)))
 
       (unless (or found bound)
 	(unwind-protect
@@ -2043,9 +2055,8 @@ If DIRECTION is `backward', search in the reverse direction."
 		    (setq list nil)))
 	      (if found
 		  (message "")
-		(signal 'search-failed (if isearch-mode
-					   (list regexp "end of manual")
-					 (list regexp)))))
+                (signal 'user-search-failed
+                        `(,regexp ,@(if isearch-mode '("end of manual"))))))
 	  (if (not found)
 	      (progn (Info-read-subfile osubfile)
 		     (goto-char opoint)
@@ -2107,10 +2118,9 @@ If DIRECTION is `backward', search in the reverse direction."
 	   (cond
 	    (isearch-regexp-function
 	     ;; Lax version of word search
-	     (let ((lax (not (or isearch-nonincremental
-				 (eq (length string)
-				     (length (isearch--state-string
-					      (car isearch-cmds))))))))
+	     (let ((lax (and (not bound) (isearch--lax-regexp-function-p))))
+	       (when lax
+		 (setq isearch-adjusted t))
 	       (if (functionp isearch-regexp-function)
 		   (funcall isearch-regexp-function string lax)
 		 (word-search-regexp string lax))))
@@ -2351,8 +2361,8 @@ If SAME-FILE is non-nil, do not move to a different Info file."
   "History-specific implementation of `Info-find-node-2'."
   (insert (format "\n\^_\nFile: %s,  Node: %s,  Up: (dir)\n\n"
 		  (or filename Info-current-file) nodename))
-  (insert "Recently Visited Nodes\n")
-  (insert "**********************\n\n")
+  (insert "History of Visited Nodes\n")
+  (insert "************************\n\n")
   (insert "* Menu:\n\n")
   (let ((hl (remove '("*History*" "Top") Info-history-list)))
     (while hl
@@ -2573,7 +2583,8 @@ new buffer."
 					 "Follow reference named: ")
 				       completions nil t)))
 	   (list (if (equal input "")
-		     default input) current-prefix-arg))
+		     default input)
+                 current-prefix-arg))
        (user-error "No cross-references in this node"))))
 
   (unless footnotename
@@ -2689,9 +2700,11 @@ Because of ambiguities, this should be concatenated with something like
             (orignode Info-current-node)
             nextnode)
         (goto-char (point-min))
-        (search-forward "\n* Menu:")
+        (unless (search-forward "\n* Menu:" nil t)
+          (user-error "No menu in this node"))
         (cond
          ((eq (car-safe action) 'boundaries) nil)
+         ((eq action 'metadata) `(metadata (category . info-menu)))
          ((eq action 'lambda)
           (re-search-forward
            (concat "\n\\* +" (regexp-quote string) ":") nil t))
@@ -2772,15 +2785,7 @@ new buffer."
 						   default)
 					 "Menu item: ")
 				       #'Info-complete-menu-item nil t nil nil
-                                       default)))
-	 ;; we rely on the fact that completing-read accepts an input
-	 ;; of "" even when the require-match argument is true and ""
-	 ;; is not a valid possibility
-	 (if (string= item "")
-	     (if default
-		 (setq item default)
-	       ;; ask again
-	       (setq item nil))))
+                                       default))))
        (list item current-prefix-arg))))
   ;; there is a problem here in that if several menu items have the same
   ;; name you can only go to the node of the first with this command.
@@ -3297,7 +3302,7 @@ Give an empty topic name to go to the Index node itself."
       (unwind-protect
 	  (with-current-buffer Info-complete-menu-buffer
 	    (Info-goto-index)
-	    (completing-read "Index topic: " 'Info-complete-menu-item))
+	    (completing-read "Index topic: " #'Info-complete-menu-item))
 	(kill-buffer Info-complete-menu-buffer)))))
   (if (equal Info-current-file "dir")
       (error "The Info directory node has no index; use m to select a manual"))
@@ -3471,7 +3476,7 @@ search results."
       (unwind-protect
 	  (with-current-buffer Info-complete-menu-buffer
 	    (Info-goto-index)
-	    (completing-read "Index topic: " 'Info-complete-menu-item))
+	    (completing-read "Index topic: " #'Info-complete-menu-item))
 	(kill-buffer Info-complete-menu-buffer)))))
   (if (equal topic "")
       (Info-find-node Info-current-file "*Index*")
@@ -5226,9 +5231,6 @@ BUFFER is the buffer speedbar is requesting buttons for."
 			(not (looking-at "Info Nodes:"))))
       (erase-buffer))
   (Info-speedbar-hierarchy-buttons nil 0))
-
-;; FIXME: Really?  Why here?
-(add-to-list 'debug-ignored-errors 'search-failed)
 
 ;;;;  Desktop support
 

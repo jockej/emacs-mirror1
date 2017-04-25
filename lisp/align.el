@@ -1,6 +1,6 @@
 ;;; align.el --- align text to a specific column, by regexp -*- lexical-binding:t -*-
 
-;; Copyright (C) 1999-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
 ;; Author: John Wiegley <johnw@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -1322,8 +1322,7 @@ aligner would have dealt with are."
 	     (modes (assq 'modes rule)))
 	;; unless the `run-if' form tells us not to, look for the
 	;; rule..
-	(unless (or (and modes (not (memq major-mode
-					  (eval (cdr modes)))))
+	(unless (or (and modes (not (apply #'derived-mode-p (eval (cdr modes)))))
 		    (and run-if (not (funcall (cdr run-if)))))
 	  (let* ((case-fold-search case-fold-search)
 		 (case-fold (assq 'case-fold rule))

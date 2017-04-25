@@ -1,6 +1,6 @@
 ;;; sql.el --- specialized comint.el for SQL interpreters  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1998-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2017 Free Software Foundation, Inc.
 
 ;; Author: Alex Schroeder <alex@gnu.org>
 ;; Maintainer: Michael Mauger <michael@mauger.com>
@@ -551,14 +551,17 @@ may be any one of the following:
                         database and server) needed to connect to
                         the database.
 
- :sqli-comint-func      name of a function which accepts no
-                        parameters that will use the values of
-                        `sql-user', `sql-password',
-                        `sql-database', `sql-server' and
-                        `sql-port' to open a comint buffer and
-                        connect to the database.  Do product
+ :sqli-comint-func      function of two arguments, PRODUCT
+                        and OPTIONS, that will open a comint buffer
+                        and connect to the database.  PRODUCT is the
+                        first argument to be passed to `sql-comint',
+                        and OPTIONS should be included in its second
+                        argument.  The function should use the values
+                        of `sql-user', `sql-password', `sql-database',
+                        `sql-server' and `sql-port' to .  Do product
                         specific configuration of comint in this
-                        function.
+                        function.  See `sql-comint-oracle' for an
+                        example of such a function.
 
  :list-all              Command string or function which produces
                         a listing of all objects in the database.
@@ -933,10 +936,10 @@ Starts `sql-interactive-mode' after doing some setup."
   :version "20.8"
   :group 'SQL)
 
-(defcustom sql-sqlite-login-params '((database :file ".*\\.\\(db\\|sqlite[23]?\\)"))
+(defcustom sql-sqlite-login-params '((database :file nil))
   "List of login parameters needed to connect to SQLite."
   :type 'sql-login-params
-  :version "24.1"
+  :version "26.1"
   :group 'SQL)
 
 ;; Customization for MySQL
@@ -2790,7 +2793,7 @@ local variable."
     ;; Iterate until we've moved the desired number of stmt ends
     (while (not (= (cl-signum arg) 0))
       ;; if we're looking at the terminator, jump by 2
-      (if (or (and (> 0 arg) (looking-back term))
+      (if (or (and (> 0 arg) (looking-back term nil))
               (and (< 0 arg) (looking-at term)))
           (setq n 2)
         (setq n 1))
@@ -2952,15 +2955,20 @@ value.  (The property value is used as the PREDICATE argument to
           (use-dialog-box nil))
      (cond
       ((plist-member plist :file)
-       (expand-file-name
-        (read-file-name prompt
-                        (file-name-directory last-value) default t
-                        (file-name-nondirectory last-value)
-                        (when (plist-get plist :file)
-                          `(lambda (f)
-                             (string-match
-                              (concat "\\<" ,(plist-get plist :file) "\\>")
-                              (file-name-nondirectory f)))))))
+       (let ((file-name
+              (read-file-name prompt
+                              (file-name-directory last-value) default 'confirm
+                              (file-name-nondirectory last-value)
+                              (when (plist-get plist :file)
+                                `(lambda (f)
+                                   (if (not (file-regular-p f))
+                                       t
+                                     (string-match
+                                      (concat "\\<" ,(plist-get plist :file) "\\>")
+                                      (file-name-nondirectory f))))))))
+         (if (string= file-name "")
+             ""
+           (expand-file-name file-name))))
 
       ((plist-member plist :completion)
        (completing-read prompt-def (plist-get plist :completion) nil t

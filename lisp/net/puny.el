@@ -1,6 +1,6 @@
 ;;; puny.el --- translate non-ASCII domain names to ASCII
 
-;; Copyright (C) 2015-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2015-2017 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: mail, net
@@ -150,10 +150,12 @@ For instance \"xn--bcher-kva\" => \"bücher\"."
 (defun puny-decode-string-internal (string)
   (with-temp-buffer
     (insert string)
-    (goto-char (point-max))
-    (search-backward "-" nil (point-min))
-    ;; The encoded chars are after the final dash.
-    (let ((encoded (buffer-substring (1+ (point)) (point-max)))
+    ;; The encoded chars are after any final dash, else the whole string.
+    (let ((encoded (buffer-substring
+                    (if (search-backward "-" nil 'move)
+                        (1+ (point))
+                      (point))
+                    (point-max)))
           (ic 0)
           (i 0)
           (bias puny-initial-bias)

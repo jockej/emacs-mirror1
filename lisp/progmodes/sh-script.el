@@ -1,6 +1,6 @@
 ;;; sh-script.el --- shell-script editing commands for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1993-1997, 1999, 2001-2016 Free Software Foundation,
+;; Copyright (C) 1993-1997, 1999, 2001-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Daniel Pfeiffer <occitan@esperanto.org>
@@ -1629,8 +1629,6 @@ with your script for an edit-interpret-debug cycle."
 
   (setq-local skeleton-pair-default-alist
 	      sh-skeleton-pair-default-alist)
-  (setq-local skeleton-end-hook
-	      (lambda () (or (eolp) (newline) (indent-relative))))
 
   (setq-local paragraph-start (concat page-delimiter "\\|$"))
   (setq-local paragraph-separate (concat paragraph-start "\\|#!/"))

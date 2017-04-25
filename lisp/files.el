@@ -1,6 +1,6 @@
 ;;; files.el --- file input and output commands for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1987, 1992-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1985-1987, 1992-2017 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Package: emacs
@@ -279,8 +279,13 @@ The value `never' means do not make them."
 		 (const :tag "If existing" nil)
 		 (other :tag "Always" t))
   :group 'backup)
+
+(defun version-control-safe-local-p (x)
+  "Return whether X is safe as local value for `version-control'."
+  (or (booleanp x) (equal x 'never)))
+
 (put 'version-control 'safe-local-variable
-     (lambda (x) (or (booleanp x) (equal x 'never))))
+     #'version-control-safe-local-p)
 
 (defcustom dired-kept-versions 2
   "When cleaning directory, number of versions to keep."
@@ -439,7 +444,8 @@ functions are called."
 
 (define-obsolete-variable-alias 'write-file-hooks 'write-file-functions "22.1")
 (defvar write-file-functions nil
-  "List of functions to be called before writing out a buffer to a file.
+  "List of functions to be called before saving a buffer to a file.
+Only used by `save-buffer'.
 If one of them returns non-nil, the file is considered already written
 and the rest are not called.
 These hooks are considered to pertain to the visited file.
@@ -464,6 +470,7 @@ updates before the buffer is saved, use `before-save-hook'.")
     'write-contents-functions "22.1")
 (defvar write-contents-functions nil
   "List of functions to be called before writing out a buffer to a file.
+Only used by `save-buffer'.
 If one of them returns non-nil, the file is considered already written
 and the rest are not called and neither are the functions in
 `write-file-functions'.
@@ -716,13 +723,13 @@ The path separator is colon in GNU and GNU-like systems."
     ;; (which will lead to the use of B/a).
     (minibuffer-with-setup-hook
         (lambda ()
-          (setq minibuffer-completion-table
-                (apply-partially #'locate-file-completion-table
-                                 cd-path nil))
-          (setq minibuffer-completion-predicate
-                (lambda (dir)
-                  (locate-file dir cd-path nil
-                               (lambda (f) (and (file-directory-p f) 'dir-ok))))))
+          (setq-local minibuffer-completion-table
+		      (apply-partially #'locate-file-completion-table
+				       cd-path nil))
+          (setq-local minibuffer-completion-predicate
+		      (lambda (dir)
+			(locate-file dir cd-path nil
+				     (lambda (f) (and (file-directory-p f) 'dir-ok))))))
       (unless cd-path
         (setq cd-path (or (parse-colon-path (getenv "CDPATH"))
                           (list "./"))))
@@ -2422,7 +2429,7 @@ since only a single case-insensitive search through the alist is made."
    (lambda (elt)
      (cons (purecopy (car elt)) (cdr elt)))
    `(;; do this first, so that .html.pl is Polish html, not Perl
-     ("\\.[sx]?html?\\(\\.[a-zA-Z_]+\\)?\\'" . html-mode)
+     ("\\.[sx]?html?\\(\\.[a-zA-Z_]+\\)?\\'" . mhtml-mode)
      ("\\.svgz?\\'" . image-mode)
      ("\\.svgz?\\'" . xml-mode)
      ("\\.x[bp]m\\'" . image-mode)
@@ -2543,6 +2550,7 @@ ARC\\|ZIP\\|LZH\\|LHA\\|ZOO\\|[JEW]AR\\|XPI\\|RAR\\|CBR\\|7Z\\)\\'" . archive-mo
      ("\\.ds\\(ss\\)?l\\'" . dsssl-mode)
      ("\\.jsm?\\'" . javascript-mode)
      ("\\.json\\'" . javascript-mode)
+     ("\\.jsx\\'" . js-jsx-mode)
      ("\\.[ds]?vh?\\'" . verilog-mode)
      ("\\.by\\'" . bovine-grammar-mode)
      ("\\.wy\\'" . wisent-grammar-mode)
@@ -2783,8 +2791,8 @@ If FUNCTION is nil, then it is not called.  (That is a way of saying
 		comment-re "*"
 		"\\(?:!DOCTYPE[ \t\r\n]+[^>]*>[ \t\r\n]*<[ \t\r\n]*" comment-re "*\\)?"
 		"[Hh][Tt][Mm][Ll]"))
-     . html-mode)
-    ("<!DOCTYPE[ \t\r\n]+[Hh][Tt][Mm][Ll]" . html-mode)
+     . mhtml-mode)
+    ("<!DOCTYPE[ \t\r\n]+[Hh][Tt][Mm][Ll]" . mhtml-mode)
     ;; These two must come after html, because they are more general:
     ("<\\?xml " . xml-mode)
     (,(let* ((incomment-re "\\(?:[^-]\\|-[^-]\\)")
@@ -2908,11 +2916,18 @@ we don't actually set it to the same mode the buffer already has."
 			 (narrow-to-region (point-min)
 					   (min (point-max)
 						(+ (point-min) magic-mode-regexp-match-limit)))
-			 (assoc-default nil magic-mode-alist
-					(lambda (re _dummy)
-					  (if (functionp re)
-					      (funcall re)
-					    (looking-at re)))))))
+                         (assoc-default
+                          nil magic-mode-alist
+                          (lambda (re _dummy)
+                            (cond
+                             ((functionp re)
+                              (funcall re))
+                             ((stringp re)
+                              (looking-at re))
+                             (t
+                              (error
+                               "Problem in magic-mode-alist with element %s"
+                               re))))))))
 	  (set-auto-mode-0 done keep-mode-if-same)))
     ;; Next compare the filename against the entries in auto-mode-alist.
     (unless done
@@ -2964,10 +2979,16 @@ we don't actually set it to the same mode the buffer already has."
 					   (min (point-max)
 						(+ (point-min) magic-mode-regexp-match-limit)))
 			 (assoc-default nil magic-fallback-mode-alist
-					(lambda (re _dummy)
-					  (if (functionp re)
-					      (funcall re)
-					    (looking-at re)))))))
+                                        (lambda (re _dummy)
+                                          (cond
+                                           ((functionp re)
+                                            (funcall re))
+                                           ((stringp re)
+                                            (looking-at re))
+                                           (t
+                                            (error
+                                             "Problem with magic-fallback-mode-alist element: %s"
+                                             re))))))))
 	  (set-auto-mode-0 done keep-mode-if-same)))
     (unless done
       (set-buffer-major-mode (current-buffer)))))
@@ -3722,7 +3743,8 @@ Return the new variables list."
   (let* ((file-name (or (buffer-file-name)
 			;; Handle non-file buffers, too.
 			(expand-file-name default-directory)))
-	 (sub-file-name (if file-name
+	 (sub-file-name (if (and file-name
+                                 (file-name-absolute-p file-name))
                             ;; FIXME: Why not use file-relative-name?
 			    (substring file-name (length root)))))
     (condition-case err
@@ -4840,13 +4862,15 @@ the last real save, but optional arg FORCE non-nil means delete anyway."
   "Normal hook run just before auto-saving.")
 
 (defcustom before-save-hook nil
-  "Normal hook that is run before a buffer is saved to its file."
+  "Normal hook that is run before a buffer is saved to its file.
+Only used by `save-buffer'."
   :options '(copyright-update time-stamp)
   :type 'hook
   :group 'files)
 
 (defcustom after-save-hook nil
-  "Normal hook that is run after a buffer is saved to its file."
+  "Normal hook that is run after a buffer is saved to its file.
+Only used by `save-buffer'."
   :options '(executable-make-buffer-file-executable-if-script-p)
   :type 'hook
   :group 'files)
@@ -5132,6 +5156,14 @@ Before and after saving the buffer, this function runs
   "Non-nil means `save-some-buffers' should save this buffer without asking.")
 (make-variable-buffer-local 'buffer-save-without-query)
 
+(defcustom save-some-buffers-default-predicate nil
+  "Default predicate for `save-some-buffers'.
+This allows you to stop `save-some-buffers' from asking
+about certain files that you'd usually rather not save."
+  :group 'auto-save
+  :type 'function
+  :version "26.1")
+
 (defun save-some-buffers (&optional arg pred)
   "Save some modified file-visiting buffers.  Asks user about each one.
 You can answer `y' to save, `n' not to save, `C-r' to look at the
@@ -5147,10 +5179,13 @@ If PRED is nil, all the file-visiting buffers are considered.
 If PRED is t, then certain non-file buffers will also be considered.
 If PRED is a zero-argument function, it indicates for each buffer whether
 to consider it or not when called with that buffer current.
+PRED defaults to the value of `save-some-buffers-default-predicate'.
 
 See `save-some-buffers-action-alist' if you want to
 change the additional actions you can take on files."
   (interactive "P")
+  (unless pred
+    (setq pred save-some-buffers-default-predicate))
   (save-window-excursion
     (let* (queried autosaved-buffers
 	   files-done abbrevs-done)
@@ -5812,6 +5847,8 @@ an auto-save file."
 (defun recover-this-file ()
   "Recover the visited file--get contents from its last auto-save file."
   (interactive)
+  (or buffer-file-name
+      (user-error "This buffer is not visiting a file"))
   (recover-file buffer-file-name))
 
 (defun recover-file (file)
@@ -6073,8 +6110,8 @@ See also `auto-save-file-name-p'."
 	    ;; Make sure auto-save file names don't contain characters
 	    ;; invalid for the underlying filesystem.
 	    (if (and (memq system-type '(ms-dos windows-nt cygwin))
-		     ;; Don't modify remote (ange-ftp) filenames
-		     (not (string-match "^/\\w+@[-A-Za-z0-9._]+:" result)))
+		     ;; Don't modify remote filenames
+                     (not (file-remote-p result)))
 		(convert-standard-filename result)
 	      result))))
 
@@ -6111,8 +6148,8 @@ See also `auto-save-file-name-p'."
 		      ((file-writable-p "/var/tmp/") "/var/tmp/")
 		      ("~/")))))
 	       (if (and (memq system-type '(ms-dos windows-nt cygwin))
-			;; Don't modify remote (ange-ftp) filenames
-			(not (string-match "^/\\w+@[-A-Za-z0-9._]+:" fname)))
+			;; Don't modify remote filenames
+			(not (file-remote-p fname)))
 		   ;; The call to convert-standard-filename is in case
 		   ;; buffer-name includes characters not allowed by the
 		   ;; DOS/Windows filesystems.  make-temp-file writes to the
@@ -6570,7 +6607,7 @@ normally equivalent short `-D' option is just passed on to
 			      (unless (equal switches "")
 				;; Split the switches at any spaces so we can
 				;; pass separate options as separate args.
-				(split-string switches)))
+				(split-string-and-unquote switches)))
 			    ;; Avoid lossage if FILE starts with `-'.
 			    '("--")
 			    (progn
@@ -6810,6 +6847,8 @@ asks whether processes should be killed.
 Runs the members of `kill-emacs-query-functions' in turn and stops
 if any returns nil.  If `confirm-kill-emacs' is non-nil, calls it."
   (interactive "P")
+  ;; Don't use save-some-buffers-default-predicate, because we want
+  ;; to ask about all the buffers before killing Emacs.
   (save-some-buffers arg t)
   (let ((confirm confirm-kill-emacs))
     (and
@@ -6876,7 +6915,15 @@ only these files will be asked to be saved."
 (defun file-name-non-special (operation &rest arguments)
   (let ((file-name-handler-alist nil)
 	(default-directory
-	  (if (eq operation 'insert-directory)
+          ;; Some operations respect file name handlers in
+          ;; `default-directory'.  Because core function like
+          ;; `call-process' don't care about file name handlers in
+          ;; `default-directory', we here have to resolve the
+          ;; directory into a local one.  For `process-file',
+          ;; `start-file-process', and `shell-command', this fixes
+          ;; Bug#25949.
+	  (if (memq operation '(insert-directory process-file start-file-process
+                                                 shell-command))
 	      (directory-file-name
 	       (expand-file-name
 		(unhandled-file-name-directory default-directory)))

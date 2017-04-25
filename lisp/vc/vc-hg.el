@@ -1,6 +1,6 @@
 ;;; vc-hg.el --- VC backend for the mercurial version control system  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2017 Free Software Foundation, Inc.
 
 ;; Author: Ivan Kanis
 ;; Maintainer: emacs-devel@gnu.org
@@ -76,7 +76,7 @@
 ;; - annotate-extract-revision-at-line ()      OK
 ;; TAG SYSTEM
 ;; - create-tag (dir name branchp)             OK
-;; - retrieve-tag (dir name update)            OK FIXME UPDATE BUFFERS
+;; - retrieve-tag (dir name update)            OK
 ;; MISCELLANEOUS
 ;; - make-version-backups-p (file)             ??
 ;; - previous-revision (file rev)              OK
@@ -157,7 +157,7 @@ switches."
              "\\([0-9]+\\):\\([^:]*\\)"
              ":\\([^:]*\\):\\([^:]*\\):\\(.*?\\)"
              "[ \t]+\\([0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}\\)")
-    ((1 'log-view-message-face)
+    ((1 'log-view-message)
      (2 'change-log-file)
      (3 'change-log-list)
      (4 'change-log-conditionals)
@@ -562,7 +562,6 @@ Optional arg REVISION is a revision to annotate from."
   "Retrieve the version tagged by NAME of all registered files at or below DIR."
   (let ((default-directory dir))
     (vc-hg-command nil 0 nil "update" name)
-    ;; FIXME: update buffers if `update' is true
     ;; TODO: update *vc-change-log* buffer so can see @ if --graph
     ))
 
@@ -827,7 +826,7 @@ if we don't understand a construct, we signal
      prefix)))
 
 (defun vc-hg--slurp-hgignore-1 (hgignore prefix)
-  (let ((default-syntax 'vc-hg--hgignore-add-glob))
+  (let ((default-syntax 'vc-hg--hgignore-add-pcre))
     (with-temp-buffer
       (let ((attr (file-attributes hgignore)))
         (when attr (insert-file-contents hgignore))
@@ -988,8 +987,7 @@ hg binary."
          repo
          dirstate
          dirstate-attr
-         repo-relative-filename
-         ascii-fname)
+         repo-relative-filename)
     (if (or
          ;; Explicit user disable
          (not vc-hg-parse-hg-data-structures)
@@ -1014,18 +1012,12 @@ hg binary."
          (progn
            (setf repo-relative-filename
                  (file-relative-name truename repo))
-           (setf ascii-fname
-                 (string-as-unibyte
-                  (let (last-coding-system-used)
-                    (encode-coding-string
-                     repo-relative-filename
-                     'us-ascii t))))
            ;; We only try dealing with ASCII filenames
-           (not (equal ascii-fname repo-relative-filename))))
+           (string-match-p "[^[:ascii:]]" repo-relative-filename)))
         'unsupported
       (let* ((dirstate-entry
               (vc-hg--cached-dirstate-search
-               dirstate dirstate-attr ascii-fname))
+               dirstate dirstate-attr repo-relative-filename))
              (state (car dirstate-entry))
              (stat (file-attributes
                     (concat repo repo-relative-filename))))

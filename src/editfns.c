@@ -1,6 +1,6 @@
 /* Lisp functions pertaining to editing.                 -*- coding: utf-8 -*-
 
-Copyright (C) 1985-1987, 1989, 1993-2016 Free Software Foundation, Inc.
+Copyright (C) 1985-1987, 1989, 1993-2017 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -2715,7 +2715,7 @@ called interactively, INHERIT is t.  */)
     string[i] = str[i % len];
   while (n > stringlen)
     {
-      QUIT;
+      maybe_quit ();
       if (!NILP (inherit))
 	insert_and_inherit (string, stringlen);
       else
@@ -3080,8 +3080,6 @@ determines whether case is significant or ignored.  */)
 	 characters, not just the bytes.  */
       int c1, c2;
 
-      QUIT;
-
       if (! NILP (BVAR (bp1, enable_multibyte_characters)))
 	{
 	  c1 = BUF_FETCH_MULTIBYTE_CHAR (bp1, i1_byte);
@@ -3113,12 +3111,12 @@ determines whether case is significant or ignored.  */)
 	  c1 = char_table_translate (trt, c1);
 	  c2 = char_table_translate (trt, c2);
 	}
-      if (c1 < c2)
-	return make_number (- 1 - chars);
-      if (c1 > c2)
-	return make_number (chars + 1);
+
+      if (c1 != c2)
+	return make_number (c1 < c2 ? -1 - chars : chars + 1);
 
       chars++;
+      rarely_quit (chars);
     }
 
   /* The strings match as far as they go.
@@ -3887,12 +3885,14 @@ The format control string may contain %-sequences meaning to substitute
 the next available argument:
 
 %s means print a string argument.  Actually, prints any object, with `princ'.
-%d means print as number in decimal (%o octal, %x hex).
+%d means print as signed number in decimal.
+%o means print as unsigned number in octal, %x as unsigned number in hex.
 %X is like %x, but uses upper case.
 %e means print a number in exponential notation.
 %f means print a number in decimal-point notation.
-%g means print a number in exponential notation
-  or decimal-point notation, whichever uses fewer characters.
+%g means print a number in exponential notation if the exponent would be
+   less than -4 or greater than or equal to the precision (default: 6);
+   otherwise it prints in decimal-point notation.
 %c means print a number as a single character.
 %S means print any object as an s-expression (using `prin1').
 
@@ -3915,8 +3915,10 @@ The - and 0 flags affect the width specifier, as described below.
 The # flag means to use an alternate display form for %o, %x, %X, %e,
 %f, and %g sequences: for %o, it ensures that the result begins with
 \"0\"; for %x and %X, it prefixes the result with \"0x\" or \"0X\";
-for %e, %f, and %g, it causes a decimal point to be included even if
-the precision is zero.
+for %e and %f, it causes a decimal point to be included even if the
+the precision is zero; for %g, it causes a decimal point to be
+included even if the the precision is zero, and also forces trailing
+zeros after the decimal point to be left in place.
 
 The width specifier supplies a lower limit for the length of the
 printed representation.  The padding, if any, normally goes on the
@@ -3925,10 +3927,12 @@ character is normally a space, but it is 0 if the 0 flag is present.
 The 0 flag is ignored if the - flag is present, or the format sequence
 is something other than %d, %e, %f, and %g.
 
-For %e, %f, and %g sequences, the number after the "." in the
-precision specifier says how many decimal places to show; if zero, the
-decimal point itself is omitted.  For %s and %S, the precision
-specifier truncates the string to the given width.
+For %e and %f sequences, the number after the "." in the precision
+specifier says how many decimal places to show; if zero, the decimal
+point itself is omitted.  For %g, the precision specifies how many
+significant digits to print; zero or omitted are treated as 1.
+For %s and %S, the precision specifier truncates the string to the
+given width.
 
 Text properties, if any, are copied from the format-string to the
 produced text.
@@ -4141,12 +4145,6 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 	    }
 	  else if (conversion == 'c')
 	    {
-	      if (FLOATP (args[n]))
-		{
-		  double d = XFLOAT_DATA (args[n]);
-		  args[n] = make_number (FIXNUM_OVERFLOW_P (d) ? -1 : d);
-		}
-
 	      if (INTEGERP (args[n]) && ! ASCII_CHAR_P (XINT (args[n])))
 		{
 		  if (!multibyte)
@@ -4172,6 +4170,9 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 		  goto retry;
 		}
 	    }
+
+	  bool float_conversion
+	    = conversion == 'e' || conversion == 'f' || conversion == 'g';
 
 	  if (conversion == 's')
 	    {
@@ -4257,23 +4258,34 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 		}
 	    }
 	  else if (! (conversion == 'c' || conversion == 'd'
-		      || conversion == 'e' || conversion == 'f'
-		      || conversion == 'g' || conversion == 'i'
+		      || float_conversion || conversion == 'i'
 		      || conversion == 'o' || conversion == 'x'
 		      || conversion == 'X'))
 	    error ("Invalid format operation %%%c",
 		   STRING_CHAR ((unsigned char *) format - 1));
-	  else if (! NUMBERP (args[n]))
+	  else if (! (INTEGERP (args[n])
+		      || (FLOATP (args[n]) && conversion != 'c')))
 	    error ("Format specifier doesn't match argument type");
 	  else
 	    {
 	      enum
 	      {
+		/* Lower bound on the number of bits per
+		   base-FLT_RADIX digit.  */
+		DIG_BITS_LBOUND = FLT_RADIX < 16 ? 1 : 4,
+
+		/* 1 if integers should be formatted as long doubles,
+		   because they may be so large that there is a rounding
+		   error when converting them to double, and long doubles
+		   are wider than doubles.  */
+		INT_AS_LDBL = (DIG_BITS_LBOUND * DBL_MANT_DIG < FIXNUM_BITS - 1
+			       && DBL_MANT_DIG < LDBL_MANT_DIG),
+
 		/* Maximum precision for a %f conversion such that the
 		   trailing output digit might be nonzero.  Any precision
 		   larger than this will not yield useful information.  */
 		USEFUL_PRECISION_MAX =
-		  ((1 - DBL_MIN_EXP)
+		  ((1 - LDBL_MIN_EXP)
 		   * (FLT_RADIX == 2 || FLT_RADIX == 10 ? 1
 		      : FLT_RADIX == 16 ? 4
 		      : -1)),
@@ -4282,7 +4294,7 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 		   precision is no more than USEFUL_PRECISION_MAX.
 		   On all practical hosts, %f is the worst case.  */
 		SPRINTF_BUFSIZE =
-		  sizeof "-." + (DBL_MAX_10_EXP + 1) + USEFUL_PRECISION_MAX,
+		  sizeof "-." + (LDBL_MAX_10_EXP + 1) + USEFUL_PRECISION_MAX,
 
 		/* Length of pM (that is, of pMd without the
 		   trailing "d").  */
@@ -4296,22 +4308,28 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 
 	      /* Create the copy of the conversion specification, with
 		 any width and precision removed, with ".*" inserted,
+		 with "L" possibly inserted for floating-point formats,
 		 and with pM inserted for integer formats.
-		 At most three flags F can be specified at once.  */
-	      char convspec[sizeof "%FFF.*d" + pMlen];
+		 At most two flags F can be specified at once.  */
+	      char convspec[sizeof "%FF.*d" + max (INT_AS_LDBL, pMlen)];
 	      {
 		char *f = convspec;
 		*f++ = '%';
-		*f = '-'; f += minus_flag;
+		/* MINUS_FLAG and ZERO_FLAG are dealt with later.  */
 		*f = '+'; f +=  plus_flag;
 		*f = ' '; f += space_flag;
 		*f = '#'; f += sharp_flag;
-		*f = '0'; f +=  zero_flag;
                 *f++ = '.';
                 *f++ = '*';
-		if (conversion == 'd' || conversion == 'i'
-		    || conversion == 'o' || conversion == 'x'
-		    || conversion == 'X')
+		if (float_conversion)
+		  {
+		    if (INT_AS_LDBL)
+		      {
+			*f = 'L';
+			f += INTEGERP (args[n]);
+		      }
+		  }
+		else if (conversion != 'c')
 		  {
 		    memcpy (f, pMd, pMlen);
 		    f += pMlen;
@@ -4338,12 +4356,19 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 		 not suitable here.  */
 	      char sprintf_buf[SPRINTF_BUFSIZE];
 	      ptrdiff_t sprintf_bytes;
-	      if (conversion == 'e' || conversion == 'f' || conversion == 'g')
+	      if (float_conversion)
 		{
-		  double x = (INTEGERP (args[n])
-			      ? XINT (args[n])
-			      : XFLOAT_DATA (args[n]));
-		  sprintf_bytes = sprintf (sprintf_buf, convspec, prec, x);
+		  if (INT_AS_LDBL && INTEGERP (args[n]))
+		    {
+		      /* Although long double may have a rounding error if
+			 DIG_BITS_LBOUND * LDBL_MANT_DIG < FIXNUM_BITS - 1,
+			 it is more accurate than plain 'double'.  */
+		      long double x = XINT (args[n]);
+		      sprintf_bytes = sprintf (sprintf_buf, convspec, prec, x);
+		    }
+		  else
+		    sprintf_bytes = sprintf (sprintf_buf, convspec, prec,
+					     XFLOATINT (args[n]));
 		}
 	      else if (conversion == 'c')
 		{
@@ -4351,7 +4376,7 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 		  sprintf_buf[0] = XINT (args[n]);
 		  sprintf_bytes = prec != 0;
 		}
-	      else if (conversion == 'd')
+	      else if (conversion == 'd' || conversion == 'i')
 		{
 		  /* For float, maybe we should use "%1.0f"
 		     instead so it also works for values outside
@@ -4406,8 +4431,7 @@ styled_format (ptrdiff_t nargs, Lisp_Object *args, bool message)
 	      uintmax_t leading_zeros = 0, trailing_zeros = 0;
 	      if (excess_precision)
 		{
-		  if (conversion == 'e' || conversion == 'f'
-		      || conversion == 'g')
+		  if (float_conversion)
 		    {
 		      if ((conversion == 'g' && ! sharp_flag)
 			  || ! ('0' <= sprintf_buf[sprintf_bytes - 1]

@@ -1,6 +1,6 @@
 ;;; Test GNU Emacs modules.
 
-;; Copyright 2015-2016 Free Software Foundation, Inc.
+;; Copyright 2015-2017 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -64,7 +64,21 @@
 ;;
 
 (ert-deftest mod-test-non-local-exit-signal-test ()
-  (should-error (mod-test-signal)))
+  (should-error (mod-test-signal))
+  (let (debugger-args backtrace)
+    (should-error
+     (let ((debugger (lambda (&rest args)
+                       (setq debugger-args args
+                             backtrace (with-output-to-string (backtrace)))
+                       (cl-incf num-nonmacro-input-events)))
+           (debug-on-signal t))
+       (mod-test-signal)))
+    (should (equal debugger-args '(error (error . 56))))
+    (should (string-match-p
+             (rx bol "  internal--module-call(" (+ nonl) ?\) ?\n
+                 "  apply(internal--module-call " (+ nonl) ?\) ?\n
+                 "  mod-test-signal()" eol)
+             backtrace))))
 
 (ert-deftest mod-test-non-local-exit-throw-test ()
   (should (equal

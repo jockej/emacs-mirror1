@@ -1,6 +1,6 @@
 /* Lisp parsing and input streams.
 
-Copyright (C) 1985-1989, 1993-1995, 1997-2016 Free Software Foundation,
+Copyright (C) 1985-1989, 1993-1995, 1997-2017 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -451,7 +451,7 @@ readbyte_from_file (int c, Lisp_Object readcharfun)
   while (c == EOF && ferror (instream) && errno == EINTR)
     {
       unblock_input ();
-      QUIT;
+      maybe_quit ();
       block_input ();
       clearerr (instream);
       c = getc (instream);
@@ -558,8 +558,6 @@ static Lisp_Object read_vector (Lisp_Object, bool);
 
 static Lisp_Object substitute_object_recurse (Lisp_Object, Lisp_Object,
                                               Lisp_Object);
-static void substitute_object_in_subtree (Lisp_Object,
-                                          Lisp_Object);
 static void substitute_in_interval (INTERVAL, Lisp_Object);
 
 
@@ -603,7 +601,7 @@ read_filtered_event (bool no_switch_frame, bool ascii_required,
   /* Compute timeout.  */
   if (NUMBERP (seconds))
     {
-      double duration = extract_float (seconds);
+      double duration = XFLOATINT (seconds);
       struct timespec wait_time = dtotimespec (duration);
       end_time = timespec_add (current_timespec (), wait_time);
     }
@@ -910,7 +908,7 @@ safe_to_load_version (int fd)
 
   /* Read the first few bytes from the file, and look for a line
      specifying the byte compiler version used.  */
-  nbytes = emacs_read (fd, buf, sizeof buf);
+  nbytes = emacs_read_quit (fd, buf, sizeof buf);
   if (nbytes > 0)
     {
       /* Skip to the next newline, skipping over the initial `ELC'
@@ -1702,14 +1700,14 @@ build_load_history (Lisp_Object filename, bool entire)
 		     			  Fcons (newelt, XCDR (tem))));
 
 		  tem2 = XCDR (tem2);
-		  QUIT;
+		  maybe_quit ();
 		}
 	    }
 	}
       else
 	prev = tail;
       tail = XCDR (tail);
-      QUIT;
+      maybe_quit ();
     }
 
   /* If we're loading an entire file, cons the new assoc onto the
@@ -2599,14 +2597,24 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 	      Lisp_Object val = Qnil;
 	      /* The size is 2 * number of allowed keywords to
 		 make-hash-table.  */
-	      Lisp_Object params[10];
+	      Lisp_Object params[12];
 	      Lisp_Object ht;
 	      Lisp_Object key = Qnil;
 	      int param_count = 0;
 
 	      if (!EQ (head, Qhash_table))
-		error ("Invalid extended read marker at head of #s list "
-		       "(only hash-table allowed)");
+		{
+		  ptrdiff_t size = XINT (Flength (tmp));
+		  Lisp_Object record = Fmake_record (CAR_SAFE (tmp),
+						     make_number (size - 1),
+						     Qnil);
+		  for (int i = 1; i < size; i++)
+		    {
+		      tmp = Fcdr (tmp);
+		      ASET (record, i, Fcar (tmp));
+		    }
+		  return record;
+		}
 
 	      tmp = CDR_SAFE (tmp);
 
@@ -2635,6 +2643,11 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 	      params[param_count + 1] = Fplist_get (tmp, Qrehash_threshold);
 	      if (!NILP (params[param_count + 1]))
 		param_count += 2;
+
+              params[param_count] = QCpurecopy;
+              params[param_count + 1] = Fplist_get (tmp, Qpurecopy);
+              if (!NILP (params[param_count + 1]))
+                param_count += 2;
 
 	      /* This is the hash table data.  */
 	      data = Fplist_get (tmp, Qdata);
@@ -2952,7 +2965,7 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 		      tem = read0 (readcharfun);
 
 		      /* Now put it everywhere the placeholder was...  */
-		      substitute_object_in_subtree (tem, placeholder);
+		      Fsubstitute_object_in_subtree (tem, placeholder);
 
 		      /* ...and #n# will use the real value from now on.  */
 		      Fsetcdr (cell, tem);
@@ -3321,8 +3334,10 @@ read1 (Lisp_Object readcharfun, int *pch, bool first_in_list)
 /* List of nodes we've seen during substitute_object_in_subtree.  */
 static Lisp_Object seen_list;
 
-static void
-substitute_object_in_subtree (Lisp_Object object, Lisp_Object placeholder)
+DEFUN ("substitute-object-in-subtree", Fsubstitute_object_in_subtree,
+       Ssubstitute_object_in_subtree, 2, 2, 0,
+       doc: /* Replace every reference to PLACEHOLDER in OBJECT with OBJECT.  */)
+  (Lisp_Object object, Lisp_Object placeholder)
 {
   Lisp_Object check_object;
 
@@ -3340,6 +3355,7 @@ substitute_object_in_subtree (Lisp_Object object, Lisp_Object placeholder)
      original.  */
   if (!EQ (check_object, object))
     error ("Unexpected mutation error in reader");
+  return Qnil;
 }
 
 /*  Feval doesn't get called from here, so no gc protection is needed.  */
@@ -3384,8 +3400,9 @@ substitute_object_recurse (Lisp_Object object, Lisp_Object placeholder, Lisp_Obj
 	if (BOOL_VECTOR_P (subtree))
 	  return subtree;		/* No sub-objects anyway.  */
 	else if (CHAR_TABLE_P (subtree) || SUB_CHAR_TABLE_P (subtree)
-		 || COMPILEDP (subtree) || HASH_TABLE_P (subtree))
-	  length = ASIZE (subtree) & PSEUDOVECTOR_SIZE_MASK;
+		 || COMPILEDP (subtree) || HASH_TABLE_P (subtree)
+		 || RECORDP (subtree))
+	  length = PVSIZE (subtree);
 	else if (VECTORP (subtree))
 	  length = ASIZE (subtree);
 	else
@@ -4116,7 +4133,7 @@ OBARRAY defaults to the value of `obarray'.  */)
   return Qnil;
 }
 
-#define OBARRAY_SIZE 1511
+#define OBARRAY_SIZE 15121
 
 void
 init_obarray (void)
@@ -4543,6 +4560,7 @@ syms_of_lread (void)
 {
   defsubr (&Sread);
   defsubr (&Sread_from_string);
+  defsubr (&Ssubstitute_object_in_subtree);
   defsubr (&Sintern);
   defsubr (&Sintern_soft);
   defsubr (&Sunintern);
@@ -4849,6 +4867,7 @@ that are loaded before your customizations are read!  */);
   DEFSYM (Qdata, "data");
   DEFSYM (Qtest, "test");
   DEFSYM (Qsize, "size");
+  DEFSYM (Qpurecopy, "purecopy");
   DEFSYM (Qweakness, "weakness");
   DEFSYM (Qrehash_size, "rehash-size");
   DEFSYM (Qrehash_threshold, "rehash-threshold");

@@ -1,6 +1,6 @@
 ;;; editfns-tests.el -- tests for editfns.c
 
-;; Copyright (C) 2016 Free Software Foundation, Inc.
+;; Copyright (C) 2016-2017 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -132,5 +132,8 @@
     (transpose-test-reverse-word 1 6)
     (should (string= (buffer-string) "éä\"ba÷"))
     (should (equal (transpose-test-get-byte-positions 7) '(1 3 5 6 7 8 10)))))
+
+(ert-deftest format-c-float ()
+  (should-error (format "%c" 0.5)))
 
 ;;; editfns-tests.el ends here

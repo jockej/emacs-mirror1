@@ -1,6 +1,6 @@
 ;; xref.el --- Cross-referencing commands              -*-lexical-binding:t-*-
 
-;; Copyright (C) 2014-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2017 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -69,7 +69,6 @@
 (require 'cl-lib)
 (require 'eieio)
 (require 'ring)
-(require 'pcase)
 (require 'project)
 
 (eval-when-compile
@@ -918,7 +917,7 @@ IGNORES is a list of glob patterns."
   (grep-compute-defaults)
   (defvar grep-find-template)
   (defvar grep-highlight-matches)
-  (let* ((grep-find-template (replace-regexp-in-string "-e " "-E "
+  (let* ((grep-find-template (replace-regexp-in-string "<C>" "<C> -E"
                                                        grep-find-template t t))
          (grep-highlight-matches nil)
          (command (xref--rgrep-command (xref--regexp-to-extended regexp)
@@ -931,6 +930,10 @@ IGNORES is a list of glob patterns."
     (with-current-buffer buf
       (erase-buffer)
       (call-process-shell-command command nil t)
+      ;; FIXME: What to do when the call fails?
+      ;; "find: ‘foo’: No such file or directory\n"
+      ;; The problem is, find-grep can exit with a nonzero code even
+      ;; when there are some matches in the output.
       (goto-char (point-min))
       (while (re-search-forward grep-re nil t)
         (push (list (string-to-number (match-string 2))

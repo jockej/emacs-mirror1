@@ -1,6 +1,6 @@
 ;;; dired.el --- directory-browsing commands -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1986, 1992-1997, 2000-2016 Free Software
+;; Copyright (C) 1985-1986, 1992-1997, 2000-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Sebastian Kremer <sk@thp.uni-koeln.de>
@@ -59,6 +59,10 @@
 May contain all other options that don't contradict `-l';
 may contain even `F', `b', `i' and `s'.  See also the variable
 `dired-ls-F-marks-symlinks' concerning the `F' switch.
+Options that include embedded whitespace must be quoted
+like this: \\\"--option=value with spaces\\\"; you can use
+`combine-and-quote-strings' to produce the correct quoting of
+each option.
 On systems such as MS-DOS and MS-Windows, which use `ls' emulation in Lisp,
 some of the `ls' switches are not supported; see the doc string of
 `insert-directory' in `ls-lisp.el' for more details."
@@ -3357,7 +3361,14 @@ object files--just `.o' will mark more than you might think."
   (interactive
    (list (read-regexp (concat (if current-prefix-arg "Unmark" "Mark")
                               " files (regexp): ")
-                      nil 'dired-regexp-history)
+                      ;; Add more suggestions into the default list
+                      (cons nil (list (dired-get-filename t t)
+                                      (and (dired-get-filename nil t)
+                                           (concat (regexp-quote
+                                                    (file-name-extension
+                                                     (dired-get-filename nil t) t))
+                                                   "\\'"))))
+                      'dired-regexp-history)
 	 (if current-prefix-arg ?\040)))
   (let ((dired-marker-char (or marker-char dired-marker-char)))
     (dired-mark-if

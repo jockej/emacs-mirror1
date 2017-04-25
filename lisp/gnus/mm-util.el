@@ -1,6 +1,6 @@
 ;;; mm-util.el --- Utility functions for Mule and low level things
 
-;; Copyright (C) 1998-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1998-2017 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;;	MORIOKA Tomohiko <morioka@jaist.ac.jp>
@@ -736,7 +736,7 @@ If INHIBIT is non-nil, inhibit `mm-inhibit-file-name-handlers'."
 		     inhibit-file-name-handlers)
 	   inhibit-file-name-handlers)))
     (write-region start end filename t 'no-message)
-    (message "Appended to %s" filename)))
+    (message "Appended to `%s' (%d characters)" filename (- end start))))
 
 (defun mm-write-region (start end filename &optional append visit lockname
 			      coding-system inhibit)

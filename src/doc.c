@@ -1,6 +1,6 @@
 /* Record indices of function doc strings stored in a file. -*- coding: utf-8 -*-
 
-Copyright (C) 1985-1986, 1993-1995, 1997-2016 Free Software Foundation,
+Copyright (C) 1985-1986, 1993-1995, 1997-2017 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -186,7 +186,7 @@ get_doc_string (Lisp_Object filepos, bool unibyte, bool definition)
          If we read the same block last time, maybe skip this?  */
       if (space_left > 1024 * 8)
 	space_left = 1024 * 8;
-      nread = emacs_read (fd, p, space_left);
+      nread = emacs_read_quit (fd, p, space_left);
       if (nread < 0)
 	report_file_error ("Read error on documentation file", file);
       p[nread] = 0;
@@ -342,7 +342,7 @@ string is passed through `substitute-command-keys'.  */)
     doc = make_number (XSUBR (fun)->doc);
   else if (COMPILEDP (fun))
     {
-      if ((ASIZE (fun) & PSEUDOVECTOR_SIZE_MASK) <= COMPILED_DOC_STRING)
+      if (PVSIZE (fun) <= COMPILED_DOC_STRING)
 	return Qnil;
       else
 	{
@@ -500,7 +500,7 @@ store_function_docstring (Lisp_Object obj, EMACS_INT offset)
     {
       /* This bytecode object must have a slot for the
 	 docstring, since we've found a docstring for it.  */
-      if ((ASIZE (fun) & PSEUDOVECTOR_SIZE_MASK) > COMPILED_DOC_STRING)
+      if (PVSIZE (fun) > COMPILED_DOC_STRING)
 	ASET (fun, COMPILED_DOC_STRING, make_number (offset));
       else
 	{
@@ -590,16 +590,15 @@ the same file name is found in the `doc-directory'.  */)
   Vdoc_file_name = filename;
   filled = 0;
   pos = 0;
-  while (1)
+  while (true)
     {
-      register char *end;
       if (filled < 512)
-	filled += emacs_read (fd, &buf[filled], sizeof buf - 1 - filled);
+	filled += emacs_read_quit (fd, &buf[filled], sizeof buf - 1 - filled);
       if (!filled)
 	break;
 
       buf[filled] = 0;
-      end = buf + (filled < 512 ? filled : filled - 128);
+      char *end = buf + (filled < 512 ? filled : filled - 128);
       p = memchr (buf, '\037', end - buf);
       /* p points to ^_Ffunctionname\n or ^_Vvarname\n or ^_Sfilename\n.  */
       if (p)

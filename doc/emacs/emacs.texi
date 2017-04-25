@@ -27,7 +27,7 @@ This is the @cite{GNU Emacs Manual},
 @end ifnottex
 updated for Emacs version @value{EMACSVER}.
 
-Copyright @copyright{} 1985--1987, 1993--2016 Free Software Foundation, Inc.
+Copyright @copyright{} 1985--1987, 1993--2017 Free Software Foundation, Inc.
 
 @quotation
 Permission is granted to copy, distribute and/or modify this document
@@ -1198,7 +1198,7 @@ Command Line Arguments for Emacs Invocation
 * Font X::              Choosing a font for text, under X.
 * Colors X::            Choosing display colors.
 * Window Size X::       Start-up window size, under X.
-* Borders X::           Internal and external borders, under X.
+* Borders X::           Internal and outer borders, under X.
 * Title X::             Specifying the initial frame's title.
 * Icons X::             Choosing what sort of icon to use, under X.
 * Misc X::              Other display options.

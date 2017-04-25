@@ -1,6 +1,6 @@
 ;;; simple.el --- basic editing commands for Emacs  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1993-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1985-1987, 1993-2017 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: internal
@@ -633,10 +633,9 @@ buffer if the variable `delete-trailing-lines' is non-nil."
         (with-syntax-table (make-syntax-table (syntax-table))
           ;; Don't delete formfeeds, even if they are considered whitespace.
           (modify-syntax-entry ?\f "_")
-          ;; Treating \n as non-whitespace makes things easier.
-          (modify-syntax-entry ?\n "_")
-          (while (re-search-forward "\\s-+$" end-marker t)
-            (let ((b (match-beginning 0)) (e (match-end 0)))
+          (while (re-search-forward "\\s-$" end-marker t)
+            (skip-syntax-backward "-" (line-beginning-position))
+            (let ((b (point)) (e (match-end 0)))
               (when (region-modifiable-p b e)
                 (delete-region b e)))))
         (if end
@@ -834,7 +833,7 @@ Leave one space or none, according to the context."
   (interactive "*")
   (save-excursion
     (delete-horizontal-space)
-    (if (or (looking-at "^\\|\\s)")
+    (if (or (looking-at "^\\|$\\|\\s)")
 	    (save-excursion (forward-char -1)
 			    (looking-at "$\\|\\s(\\|\\s'")))
 	nil
@@ -1699,6 +1698,7 @@ If the value is non-nil and not a number, we wait 2 seconds."
                   ;; Don't show the help message if the binding isn't
                   ;; significantly shorter than the M-x command the user typed.
                   (< len (- max 5))))
+      (input-pending-p)    ;Dummy call to trigger input-processing, bug#23002.
       (let ((candidate (pop candidates)))
         (when (equal name
                        (car-safe (completion-try-completion
@@ -1732,6 +1732,9 @@ invoking, give a prefix argument to `execute-extended-command'."
 		       (where-is-internal function overriding-local-map t))))
     (unless (commandp function)
       (error "`%s' is not a valid command name" command-name))
+    ;; Some features, such as novice.el, rely on this-command-keys
+    ;; including M-x COMMAND-NAME RET.
+    (set--this-command-keys (concat "\M-x" (symbol-name function) "\r"))
     (setq this-command function)
     ;; Normally `real-this-command' should never be changed, but here we really
     ;; want to pretend that M-x <cmd> RET is nothing more than a "key
@@ -5144,6 +5147,21 @@ If ARG is zero, move to the beginning of the current line."
 		       (point-max)))
       (goto-char (next-overlay-change (point))))
     (end-of-line)))
+
+(defun kill-current-buffer ()
+  "Kill the current buffer.
+When called in the minibuffer, get out of the minibuffer
+using `abort-recursive-edit'.
+
+This is like `kill-this-buffer', but it doesn't have to be invoked
+via the menu bar, and pays no attention to the menu-bar's frame."
+  (interactive)
+  (let ((frame (selected-frame)))
+    (if (and (frame-live-p frame)
+             (not (window-minibuffer-p (frame-selected-window frame))))
+        (kill-buffer (current-buffer))
+      (abort-recursive-edit))))
+
 
 (defun insert-buffer (buffer)
   "Insert after point the contents of BUFFER.
@@ -5409,11 +5427,15 @@ also checks the value of `use-empty-active-region'."
        ;; region is active when there's no mark.
        (progn (cl-assert (mark)) t)))
 
+(defun region-bounds ()
+  "Return the boundaries of the region as a list of (START . END) positions."
+  (funcall region-extract-function 'bounds))
+
 (defun region-noncontiguous-p ()
   "Return non-nil if the region contains several pieces.
 An example is a rectangular region handled as a list of
 separate contiguous regions for each line."
-  (> (length (funcall region-extract-function 'bounds)) 1))
+  (> (length (region-bounds)) 1))
 
 (defvar redisplay-unhighlight-region-function
   (lambda (rol) (when (overlayp rol) (delete-overlay rol))))
@@ -6657,7 +6679,7 @@ even beep.)"
 	;; whether the trailing whitespace is highlighted.  But, it's
 	;; OK to just do this unconditionally.
 	(skip-chars-forward " \t")))
-    (kill-region opoint (if (and kill-whole-line (looking-at "\n"))
+    (kill-region opoint (if (and kill-whole-line (= (following-char) ?\n))
 			    (1+ (point))
 			  (point)))))
 
@@ -7567,7 +7589,7 @@ More precisely, a char with closeparen syntax is self-inserted.")
 
 ;; This executes C-g typed while Emacs is waiting for a command.
 ;; Quitting out of a program does not go through here;
-;; that happens in the QUIT macro at the C code level.
+;; that happens in the maybe_quit function at the C code level.
 (defun keyboard-quit ()
   "Signal a `quit' condition.
 During execution of Lisp code, this character causes a quit directly.
@@ -7885,7 +7907,7 @@ With a prefix argument, set VARIABLE to VALUE buffer-locally."
     (define-key map [?\t] 'next-completion)
     (define-key map [backtab] 'previous-completion)
     (define-key map "q" 'quit-window)
-    (define-key map "z" 'kill-this-buffer)
+    (define-key map "z" 'kill-current-buffer)
     map)
   "Local map for completion list buffers.")
 

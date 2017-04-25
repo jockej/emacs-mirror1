@@ -1,7 +1,7 @@
 /* Definitions for data structures and routines for the regular
    expression library, version 0.12.
 
-   Copyright (C) 1985, 1989-1993, 1995, 2000-2016 Free Software
+   Copyright (C) 1985, 1989-1993, 1995, 2000-2017 Free Software
    Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
@@ -186,7 +186,12 @@ typedef unsigned long reg_syntax_t;
 #endif
 
 /* Roughly the maximum number of failure points on the stack.  */
-extern size_t re_max_failures;
+extern size_t emacs_re_max_failures;
+
+#ifdef emacs
+/* Amount of memory that we can safely stack allocate.  */
+extern ptrdiff_t emacs_re_safe_alloca;
+#endif
 
 
 /* Define combinations of the above bits for the standard possibilities.

@@ -1,6 +1,6 @@
 /* Parameters and display hooks for terminal devices.
 
-Copyright (C) 1985-1986, 1993-1994, 2001-2016 Free Software Foundation,
+Copyright (C) 1985-1986, 1993-1994, 2001-2017 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -201,6 +201,9 @@ enum event_kind
   FOCUS_IN_EVENT,
 
   FOCUS_OUT_EVENT,
+
+  /* Generated when a frame is moved.  */
+  MOVE_FRAME_EVENT,
 
   /* Generated when mouse moves over window not currently selected.  */
   SELECT_WINDOW_EVENT,

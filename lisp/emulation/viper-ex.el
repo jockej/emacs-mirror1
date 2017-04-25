@@ -1,6 +1,6 @@
 ;;; viper-ex.el --- functions implementing the Ex commands for Viper
 
-;; Copyright (C) 1994-1998, 2000-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1994-1998, 2000-2017 Free Software Foundation, Inc.
 
 ;; Author: Michael Kifer <kifer@cs.stonybrook.edu>
 ;; Package: viper
@@ -326,8 +326,7 @@ Don't put `-c' here, as it is added automatically."
 	(t  'viper-glob-unix-files) ; presumably UNIX
 	)
   "Expand the file spec containing wildcard symbols.
-The default tries to set this variable to work with Unix, Windows,
-and OS/2.
+The default tries to set this variable to work with Unix or MS Windows.
 
 However, if it doesn't work right for some types of Unix shells or some OS,
 the user should supply the appropriate function and set this variable to the

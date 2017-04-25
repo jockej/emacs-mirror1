@@ -1,6 +1,6 @@
 ;;; ange-ftp.el --- transparent FTP support for GNU Emacs
 
-;; Copyright (C) 1989-1996, 1998, 2000-2016 Free Software Foundation,
+;; Copyright (C) 1989-1996, 1998, 2000-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Andy Norman (ange@hplb.hpl.hp.com)
@@ -3284,7 +3284,10 @@ system TYPE.")
 		(set-buffer-modified-p nil)))
 	  ;; ensure `last-coding-system-used' has an appropriate value
 	  (setq last-coding-system-used coding-system-used)
-	  (ange-ftp-message "Wrote %s" abbr)
+	  (ange-ftp-message "Wrote `%s' (%d characters)" abbr
+                            (cond ((null start) (buffer-size))
+                                  ((stringp start) (length start))
+                                  (t (- end start))))
 	  (ange-ftp-add-file-entry filename))
       (ange-ftp-real-write-region start end filename append visit))))
 

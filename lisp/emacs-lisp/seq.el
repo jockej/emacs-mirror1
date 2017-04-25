@@ -1,6 +1,6 @@
 ;;; seq.el --- Sequence manipulation functions  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2014-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2017 Free Software Foundation, Inc.
 
 ;; Author: Nicolas Petton <nicolas@petton.fr>
 ;; Keywords: sequences
@@ -52,7 +52,7 @@
 ;; - `seq-copy'
 ;; - `seq-into'
 ;;
-;; All functions are tested in test/automated/seq-tests.el
+;; All functions are tested in test/lisp/emacs-lisp/seq-tests.el
 
 ;;; Code:
 

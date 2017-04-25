@@ -1,6 +1,6 @@
 ;;; url-vars.el --- Variables for Uniform Resource Locator tool
 
-;; Copyright (C) 1996-1999, 2001, 2004-2016 Free Software Foundation,
+;; Copyright (C) 1996-1999, 2001, 2004-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Keywords: comm, data, processes, hypermedia
@@ -409,10 +409,6 @@ Should be one of:
   "Hook run after initializing the URL library."
   :group 'url
   :type 'hook)
-
-;;; Make OS/2 happy - yeeks
-;; (defvar	tcp-binary-process-input-services nil
-;;   "*Make OS/2 happy with our CRLF pairs...")
 
 (defconst url-working-buffer " *url-work")
 

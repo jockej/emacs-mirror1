@@ -1,6 +1,6 @@
 ;;; url-expand.el --- expand-file-name for URLs -*- lexical-binding: t -*-
 
-;; Copyright (C) 1999, 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1999, 2004-2017 Free Software Foundation, Inc.
 
 ;; Keywords: comm, data, processes
 
@@ -73,7 +73,7 @@ path components followed by `..' are removed, along with the `..' itself."
 
   ;; Need to figure out how/where to expand the fragment relative to
   (setq default (cond
-		 ((vectorp default)
+		 ((url-p default)
 		  ;; Default URL has already been parsed
 		  default)
 		 (default

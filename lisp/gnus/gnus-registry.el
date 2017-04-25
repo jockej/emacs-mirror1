@@ -1,6 +1,6 @@
 ;;; gnus-registry.el --- article registry for Gnus
 
-;; Copyright (C) 2002-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2002-2017 Free Software Foundation, Inc.
 
 ;; Author: Ted Zlatanov <tzz@lifelogs.com>
 ;; Keywords: news registry
@@ -968,12 +968,13 @@ Uses `gnus-registry-marks' to find what shortcuts to install."
   "Show the marks for an article by the :char property."
   (let* ((id (mail-header-message-id headers))
          (marks (when id (gnus-registry-get-id-key id 'mark))))
-    (mapconcat (lambda (mark)
-                 (plist-get
-                  (cdr-safe
-                   (assoc mark gnus-registry-marks))
-                  :char))
-               marks "")))
+    (concat (delq nil
+		  (mapcar
+		   (lambda (m)
+		     (plist-get
+		      (cdr-safe (assoc m gnus-registry-marks))
+		      :char))
+		   marks)))))
 
 ;; use like this:
 ;; (defalias 'gnus-user-format-function-M 'gnus-registry-article-marks-to-names)

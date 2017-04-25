@@ -1,6 +1,6 @@
 ;;; man.el --- browse UNIX manual pages -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-1994, 1996-1997, 2001-2016 Free Software
+;; Copyright (C) 1993-1994, 1996-1997, 2001-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Barry A. Warsaw <bwarsaw@cen.com>
@@ -832,10 +832,7 @@ indicating optional parts and whitespace being interpreted
 somewhat loosely.
 
 foo[, bar [, ...]] [other stuff] (sec) - description
-foo(sec)[, bar(sec) [, ...]] [other stuff] - description
-
-For more details and some regression tests, please see
-test/automated/man-tests.el in the emacs repository."
+foo(sec)[, bar(sec) [, ...]] [other stuff] - description"
   (goto-char (point-min))
   ;; See man-tests for data about which systems use which format (hopefully we
   ;; will be able to simplify the code if/when some of those formats aren't

@@ -1,6 +1,6 @@
 ;;; checkdoc-tests.el --- unit tests for checkdoc.el  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2016  Free Software Foundation, Inc.
+;; Copyright (C) 2016-2017 Free Software Foundation, Inc.
 
 ;; Author: Google Inc.
 
@@ -36,5 +36,18 @@
     (emacs-lisp-mode)
     (insert "(defun foo())")
     (should-error (checkdoc-defun) :type 'user-error)))
+
+(ert-deftest checkdoc-tests--next-docstring ()
+  "Checks that the one-argument form of `defvar' works.
+See the comments in Bug#24998."
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (insert "(defvar foo)
+\(defvar foo bar \"baz\")
+\(require 'foo)")
+    (goto-char (point-min))
+    (should (checkdoc-next-docstring))
+    (should (looking-at-p "\"baz\")"))
+    (should-not (checkdoc-next-docstring))))
 
 ;;; checkdoc-tests.el ends here

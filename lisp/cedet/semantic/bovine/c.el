@@ -1,6 +1,6 @@
 ;;; semantic/bovine/c.el --- Semantic details for C
 
-;; Copyright (C) 1999-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1999-2017 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 
@@ -2253,7 +2253,7 @@ actually in their parent which is not accessible.")
 	  (princ "      Your project symbol map is also derived from the EDE object:\n      ")
 	  (princ (object-print ede-object)))
 	(princ "\n\n")
-	(if (arrayp semantic-lex-spp-project-macro-symbol-obarray)
+	(if (obarrayp semantic-lex-spp-project-macro-symbol-obarray)
 	    (let ((macros nil))
 	      (mapatoms
 	       #'(lambda (symbol)

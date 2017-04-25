@@ -1,6 +1,6 @@
 ;;; url-cache.el --- Uniform Resource Locator retrieval tool
 
-;; Copyright (C) 1996-1999, 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1999, 2004-2017 Free Software Foundation, Inc.
 
 ;; Keywords: comm, data, processes, hypermedia
 
@@ -184,7 +184,7 @@ Very fast if you have an `md5' primitive function, suitably fast otherwise."
            ;; if it has been specified: e.g. http://www.example.com:80 will
            ;; be transcoded as http://www.example.com
            (url-recreate-url
-            (if (vectorp url) url
+            (if (url-p url) url
               (url-generic-parse-url url)))))
 
 ;;;###autoload

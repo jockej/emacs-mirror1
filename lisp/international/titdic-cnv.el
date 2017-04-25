@@ -1,6 +1,6 @@
 ;;; titdic-cnv.el --- convert cxterm dictionary (TIT format) to Quail package -*- coding:iso-2022-7bit; -*-
 
-;; Copyright (C) 1997-1998, 2000-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2000-2017 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -1167,11 +1167,14 @@ the generated Quail package is saved."
 		    (if (eq coding 'iso-2022-cn-ext) "Chinese-CNS"
 		      "Chinese-GB"))
 		  "\" \"" title "\" t\n")
-	  (let* ((coding-system-for-read
-		  (coding-system-change-eol-conversion coding 'unix))
-		 (dicbuf (find-file-noselect filename)))
-	    (funcall converter dicbuf name title)
-	    (kill-buffer dicbuf))
+          (let ((coding-system-for-read
+                 (coding-system-change-eol-conversion coding 'unix))
+                (dstbuf (current-buffer)))
+            (with-temp-buffer
+              (insert-file-contents filename)
+              (let ((dicbuf (current-buffer)))
+                (with-current-buffer dstbuf
+                  (funcall converter dicbuf name title)))))
 	  (insert ";; Local Variables:\n"
 		  ";; version-control: never\n"
 		  ";; no-update-autoloads: t\n"

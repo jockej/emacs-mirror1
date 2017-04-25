@@ -1,6 +1,6 @@
 ;;; authors.el --- utility for maintaining Emacs's AUTHORS file
 
-;; Copyright (C) 2000-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2000-2017 Free Software Foundation, Inc.
 
 ;; Author: Gerd Moellmann <gerd@gnu.org>
 ;; Maintainer: Kim F. Storm <storm@cua.dk>
@@ -980,7 +980,7 @@ Elements are (OLDNAME . NEWNAME).")
 ;; Cf authors-renamed-files-alist.
 (defconst authors-renamed-files-regexps
   '(("\\`\\(arg-nonnull\\|c\\+\\+defs\\|warn-on-use\\)\\.h\\'"
-     "build-aux/snippet/\\&")
+     "lib/\\&")
     ("\\`\\(ebuild\\|emacs\\|install\\|fast-install\\)\\.cmd\\'" "\\1.bat")
     ("\\`\\(book-spine\\|cl\\|forms\\|functions\\|gnus\\|sc\\|texinfo\\|vip\\)\
 \\.texinfo\\'" "\\1.texi")

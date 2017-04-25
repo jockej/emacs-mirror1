@@ -1,6 +1,6 @@
 ;;; perl-mode.el --- Perl code editing commands for GNU Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1990, 1994, 2001-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1990, 1994, 2001-2017 Free Software Foundation, Inc.
 
 ;; Author: William F. Mann
 ;; Maintainer: emacs-devel@gnu.org
@@ -255,9 +255,11 @@
       ;; format statements
       ("^[ \t]*format.*=[ \t]*\\(\n\\)"
        (1 (prog1 "\"" (perl-syntax-propertize-special-constructs end))))
-      ;; Funny things in `sub' arg-specs like `sub myfun ($)' or `sub ($)'.
-      ;; Be careful not to match "sub { (...) ... }".
-      ("\\<sub\\(?:[\s\t\n]+\\(?:\\sw\\|\\s_\\)+\\)?[\s\t\n]*(\\([^)]+\\))"
+      ;; Propertize perl prototype chars `$%&*;+@\[]' as punctuation
+      ;; in `sub' arg-specs like `sub myfun ($)' and `sub ($)'.  But
+      ;; don't match subroutine signatures like `sub add ($a, $b)', or
+      ;; anonymous subs like "sub { (...) ... }".
+      ("\\<sub\\(?:[\s\t\n]+\\(?:\\sw\\|\\s_\\)+\\)?[\s\t\n]*(\\([][$%&*;+@\\]+\\))"
        (1 "."))
       ;; Turn __DATA__ trailer into a comment.
       ("^\\(_\\)_\\(?:DATA\\|END\\)__[ \t]*\\(?:\\(\n\\)#.-\\*-.*perl.*-\\*-\\|\n.*\\)"

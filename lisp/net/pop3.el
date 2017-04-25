@@ -1,6 +1,6 @@
 ;;; pop3.el --- Post Office Protocol (RFC 1460) interface
 
-;; Copyright (C) 1996-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2017 Free Software Foundation, Inc.
 
 ;; Author: Richard L. Pieri <ratinox@peorth.gweep.net>
 ;; Maintainer: emacs-devel@gnu.org
@@ -159,8 +159,7 @@ Used for APOP authentication.")
       (defalias 'pop3-accept-process-output 'nnheader-accept-process-output)
     ;; Borrowed from `nnheader.el':
     (defvar pop3-read-timeout
-      (if (string-match "windows-nt\\|os/2\\|cygwin"
-			(symbol-name system-type))
+      (if (memq system-type '(windows-nt cygwin))
 	  1.0
 	0.01)
       "How long pop3 should wait between checking for the end of output.

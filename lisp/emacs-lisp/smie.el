@@ -1,6 +1,6 @@
 ;;; smie.el --- Simple Minded Indentation Engine -*- lexical-binding: t -*-
 
-;; Copyright (C) 2010-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2017 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords: languages, lisp, internal, parsing, indentation
@@ -122,6 +122,8 @@
 ;;   the indent rules don't do what the user wants).  Not sure what to do.
 
 (eval-when-compile (require 'cl-lib))
+
+(require 'prog-mode)
 
 (defgroup smie nil
   "Simple Minded Indentation Engine."
@@ -1455,7 +1457,7 @@ in order to figure out the indentation of some other (further down) point."
   ;; Start the file at column 0.
   (save-excursion
     (forward-comment (- (point)))
-    (if (bobp) 0)))
+    (if (bobp) (prog-first-column))))
 
 (defun smie-indent-close ()
   ;; Align close paren with opening paren.

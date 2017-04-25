@@ -1,7 +1,7 @@
 #!/bin/sh
 ### autogen.sh - tool to help build Emacs from a repository checkout
 
-## Copyright (C) 2011-2016 Free Software Foundation, Inc.
+## Copyright (C) 2011-2017 Free Software Foundation, Inc.
 
 ## Author: Glenn Morris <rgm@gnu.org>
 ## Maintainer: emacs-devel@gnu.org
@@ -32,14 +32,10 @@
 
 ## Tools we need:
 ## Note that we respect the values of AUTOCONF etc, like autoreconf does.
-progs="autoconf automake"
+progs="autoconf"
 
 ## Minimum versions we need:
 autoconf_min=`sed -n 's/^ *AC_PREREQ(\([0-9\.]*\)).*/\1/p' configure.ac`
-
-## This will need improving if more options are ever added to the
-## AM_INIT_AUTOMAKE call.
-automake_min=`sed -n 's/^ *AM_INIT_AUTOMAKE(\([0-9\.]*\)).*/\1/p' configure.ac`
 
 
 ## $1 = program, eg "autoconf".
@@ -75,7 +71,7 @@ minor_version ()
 ## Return 3 for unexpected error (eg failed to parse version).
 check_version ()
 {
-    ## Respect eg $AUTOMAKE if it is set, like autoreconf does.
+    ## Respect, e.g., $AUTOCONF if it is set, like autoreconf does.
     uprog=`echo $1 | sed -e 's/-/_/g' -e 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'`
 
     eval uprog=\$${uprog}
@@ -103,14 +99,17 @@ check_version ()
     return 2
 }
 
+do_check=true
 do_autoconf=false
-test $# -eq 0 && do_autoconf=true
 do_git=false
 
 for arg; do
     case $arg in
       --help)
-	exec echo "$0: usage: $0 [all|autoconf|git]";;
+	exec echo "$0: usage: $0 [--no-check] [target...]
+  Targets are: all autoconf git";;
+      --no-check)
+        do_check=false;;
       all)
 	do_autoconf=true
 	test -e .git && do_git=true;;
@@ -123,71 +122,77 @@ for arg; do
     esac
 done
 
+case $do_autoconf,$do_git in
+  false,false)
+    do_autoconf=true;;
+esac
 
-# Generate Autoconf and Automake related files, if requested.
+# Generate Autoconf-related files, if requested.
 
 if $do_autoconf; then
 
-  echo 'Checking whether you have the necessary tools...
+  if $do_check; then
+
+    echo 'Checking whether you have the necessary tools...
 (Read INSTALL.REPO for more details on building Emacs)'
 
-  missing=
-
-  for prog in $progs; do
-
-    sprog=`echo "$prog" | sed 's/-/_/g'`
-
-    eval min=\$${sprog}_min
-
-    echo "Checking for $prog (need at least version $min)..."
-
-    check_version $prog $min
-
-    retval=$?
-
-    case $retval in
-        0) stat="ok" ;;
-        1) stat="missing" ;;
-        2) stat="too old" ;;
-        *) stat="unable to check" ;;
-    esac
-
-    echo $stat
-
-    if [ $retval -ne 0 ]; then
-        missing="$missing $prog"
-        eval ${sprog}_why=\""$stat"\"
-    fi
-
-  done
-
-
-  if [ x"$missing" != x ]; then
-
-    echo '
-Building Emacs from the repository requires the following specialized programs:'
+    missing=
 
     for prog in $progs; do
-        sprog=`echo "$prog" | sed 's/-/_/g'`
 
-        eval min=\$${sprog}_min
+      sprog=`echo "$prog" | sed 's/-/_/g'`
 
-        echo "$prog (minimum version $min)"
+      eval min=\$${sprog}_min
+
+      printf '%s' "Checking for $prog (need at least version $min) ... "
+
+      check_version $prog $min
+
+      retval=$?
+
+      case $retval in
+          0) stat="ok" ;;
+          1) stat="missing" ;;
+          2) stat="too old" ;;
+          *) stat="unable to check" ;;
+      esac
+
+      echo $stat
+
+      if [ $retval -ne 0 ]; then
+          missing="$missing $prog"
+          eval ${sprog}_why=\""$stat"\"
+      fi
+
     done
 
 
-    echo '
+    if [ x"$missing" != x ]; then
+
+      echo '
+Building Emacs from the repository requires the following specialized programs:'
+
+      for prog in $progs; do
+          sprog=`echo "$prog" | sed 's/-/_/g'`
+
+          eval min=\$${sprog}_min
+
+          echo "$prog (minimum version $min)"
+      done
+
+
+      echo '
 Your system seems to be missing the following tool(s):'
 
-    for prog in $missing; do
-        sprog=`echo "$prog" | sed 's/-/_/g'`
+      for prog in $missing; do
+          sprog=`echo "$prog" | sed 's/-/_/g'`
 
-        eval why=\$${sprog}_why
+          eval why=\$${sprog}_why
 
-        echo "$prog ($why)"
-    done
+          echo "$prog ($why)"
+      done
 
-    echo '
+      echo '
 If you think you have the required tools, please add them to your PATH
 and re-run this script.
 
@@ -208,28 +213,35 @@ make install.  Add the installation directory to your PATH and re-run
 this script.
 
 If you know that the required versions are in your PATH, but this
-script has made an error, then you can simply run
-
-autoreconf -fi -I m4
-
-instead of this script.
+script has made an error, then you can simply re-run this script with
+the --no-check option.
 
 Please report any problems with this script to bug-gnu-emacs@gnu.org .'
 
-    exit 1
-  fi
+      exit 1
+    fi
 
-  echo 'Your system has the required tools.'
+    echo 'Your system has the required tools.'
+
+  fi                            # do_check
+
+  # Build aclocal.m4 here so that autoreconf need not use aclocal.
+  # aclocal is part of Automake and might not be installed, and
+  # autoreconf skips aclocal if aclocal.m4 is already supplied.
+  ls m4/*.m4 | LC_ALL=C sort | sed 's,.*\.m4$,m4_include([&]),' \
+    > aclocal.m4.tmp || exit
+  if cmp -s aclocal.m4.tmp aclocal.m4; then
+    rm -f aclocal.m4.tmp
+  else
+    echo "Building aclocal.m4 ..."
+    mv aclocal.m4.tmp aclocal.m4
+  fi || exit
+
   echo "Running 'autoreconf -fi -I m4' ..."
-
 
   ## Let autoreconf figure out what, if anything, needs doing.
   ## Use autoreconf's -f option in case autoreconf itself has changed.
-  autoreconf -fi -I m4 || exit $?
-
-  ## Create a timestamp, so that './autogen.sh; make' doesn't
-  ## cause 'make' to needlessly run 'autoheader'.
-  echo timestamp > src/stamp-h.in || exit
+  autoreconf -fi -I m4 || exit
 fi
 
 
@@ -344,7 +356,7 @@ if test ! -f configure; then
 elif test -e .git && test $git_was_ok = false && test $do_git = false; then
     echo "You can now run '$0 git'."
 elif test ! -f config.status ||
-	test -n "`find src/stamp-h.in -newer config.status`"; then
+	test -n "`find configure src/config.in -newer config.status`"; then
     echo "You can now run './configure'."
 fi
 

@@ -1,6 +1,6 @@
 ;;; subr.el --- basic lisp subroutines for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985-1986, 1992, 1994-1995, 1999-2016 Free Software
+;; Copyright (C) 1985-1986, 1992, 1994-1995, 1999-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -132,15 +132,6 @@ buffer-local wherever it is set."
   (list 'progn (list 'defvar var val docstring)
         (list 'make-variable-buffer-local (list 'quote var))))
 
-(defun apply-partially (fun &rest args)
-  "Return a function that is a partial application of FUN to ARGS.
-ARGS is a list of the first N arguments to pass to FUN.
-The result is a new function which does the same as FUN, except that
-the first N arguments are fixed at the values with which this function
-was called."
-  (lambda (&rest args2)
-    (apply fun (append args args2))))
-
 (defmacro push (newelt place)
   "Add NEWELT to the list stored in the generalized variable PLACE.
 This is morally equivalent to (setf PLACE (cons NEWELT PLACE)),
@@ -199,6 +190,10 @@ Then evaluate RESULT to get return value, default nil.
 
 \(fn (VAR LIST [RESULT]) BODY...)"
   (declare (indent 1) (debug ((symbolp form &optional form) body)))
+  (unless (consp spec)
+    (signal 'wrong-type-argument (list 'consp spec)))
+  (unless (<= 2 (length spec) 3)
+    (signal 'wrong-number-of-arguments (list '(2 . 3) (length spec))))
   ;; It would be cleaner to create an uninterned symbol,
   ;; but that uses a lot more space when many functions in many files
   ;; use dolist.
@@ -344,6 +339,15 @@ configuration."
   (and (consp object)
        (eq (car object) 'frame-configuration)))
 
+(defun apply-partially (fun &rest args)
+  "Return a function that is a partial application of FUN to ARGS.
+ARGS is a list of the first N arguments to pass to FUN.
+The result is a new function which does the same as FUN, except that
+the first N arguments are fixed at the values with which this function
+was called."
+  (lambda (&rest args2)
+    (apply fun (append args args2))))
+
 
 ;;;; List functions.
 
@@ -383,6 +387,126 @@ configuration."
   "Return the cdr of the cdr of X."
   (declare (compiler-macro internal--compiler-macro-cXXr))
   (cdr (cdr x)))
+
+(defun caaar (x)
+  "Return the `car' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (car x))))
+
+(defun caadr (x)
+  "Return the `car' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (cdr x))))
+
+(defun cadar (x)
+  "Return the `car' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (car x))))
+
+(defun caddr (x)
+  "Return the `car' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (cdr x))))
+
+(defun cdaar (x)
+  "Return the `cdr' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (car x))))
+
+(defun cdadr (x)
+  "Return the `cdr' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (cdr x))))
+
+(defun cddar (x)
+  "Return the `cdr' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (car x))))
+
+(defun cdddr (x)
+  "Return the `cdr' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (cdr x))))
+
+(defun caaaar (x)
+  "Return the `car' of the `car' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (car (car x)))))
+
+(defun caaadr (x)
+  "Return the `car' of the `car' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (car (cdr x)))))
+
+(defun caadar (x)
+  "Return the `car' of the `car' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (cdr (car x)))))
+
+(defun caaddr (x)
+  "Return the `car' of the `car' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (car (cdr (cdr x)))))
+
+(defun cadaar (x)
+  "Return the `car' of the `cdr' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (car (car x)))))
+
+(defun cadadr (x)
+  "Return the `car' of the `cdr' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (car (cdr x)))))
+
+(defun caddar (x)
+  "Return the `car' of the `cdr' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (cdr (car x)))))
+
+(defun cadddr (x)
+  "Return the `car' of the `cdr' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (car (cdr (cdr (cdr x)))))
+
+(defun cdaaar (x)
+  "Return the `cdr' of the `car' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (car (car x)))))
+
+(defun cdaadr (x)
+  "Return the `cdr' of the `car' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (car (cdr x)))))
+
+(defun cdadar (x)
+  "Return the `cdr' of the `car' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (cdr (car x)))))
+
+(defun cdaddr (x)
+  "Return the `cdr' of the `car' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (car (cdr (cdr x)))))
+
+(defun cddaar (x)
+  "Return the `cdr' of the `cdr' of the `car' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (car (car x)))))
+
+(defun cddadr (x)
+  "Return the `cdr' of the `cdr' of the `car' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (car (cdr x)))))
+
+(defun cdddar (x)
+  "Return the `cdr' of the `cdr' of the `cdr' of the `car' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (cdr (car x)))))
+
+(defun cddddr (x)
+  "Return the `cdr' of the `cdr' of the `cdr' of the `cdr' of X."
+  (declare (compiler-macro internal--compiler-macro-cXXr))
+  (cdr (cdr (cdr (cdr x)))))
 
 (defun last (list &optional n)
   "Return the last link of LIST.  Its car is the last element.
@@ -1297,8 +1421,10 @@ be a list of the form returned by `event-start' and `event-end'."
 ;; bug#23850
 (make-obsolete 'string-to-unibyte   "use `encode-coding-string'." "26.1")
 (make-obsolete 'string-as-unibyte   "use `encode-coding-string'." "26.1")
+(make-obsolete 'string-make-unibyte   "use `encode-coding-string'." "26.1")
 (make-obsolete 'string-to-multibyte "use `decode-coding-string'." "26.1")
 (make-obsolete 'string-as-multibyte "use `decode-coding-string'." "26.1")
+(make-obsolete 'string-make-multibyte "use `decode-coding-string'." "26.1")
 
 (defun log10 (x)
   "Return (log X 10), the log base 10 of X."
@@ -1750,13 +1876,18 @@ Only affects hooks run in the current buffer."
 
 ;; PUBLIC: find if the current mode derives from another.
 
+(defun provided-mode-derived-p (mode &rest modes)
+  "Non-nil if MODE is derived from one of MODES.
+Uses the `derived-mode-parent' property of the symbol to trace backwards.
+If you just want to check `major-mode', use `derived-mode-p'."
+  (while (and (not (memq mode modes))
+              (setq mode (get mode 'derived-mode-parent))))
+  mode)
+
 (defun derived-mode-p (&rest modes)
   "Non-nil if the current major mode is derived from one of MODES.
 Uses the `derived-mode-parent' property of the symbol to trace backwards."
-  (let ((parent major-mode))
-    (while (and (not (memq parent modes))
-		(setq parent (get parent 'derived-mode-parent))))
-    parent))
+  (apply #'provided-mode-derived-p major-mode modes))
 
 ;;;; Minor modes.
 
@@ -2752,6 +2883,14 @@ See Info node `(elisp)Security Considerations'."
        "\n" "'\n'"
        (replace-regexp-in-string "[^-0-9a-zA-Z_./\n]" "\\\\\\&" argument))))
    ))
+
+(defsubst string-to-list (string)
+  "Return a list of characters in STRING."
+  (append string nil))
+
+(defsubst string-to-vector (string)
+  "Return a vector of characters in STRING."
+  (vconcat string))
 
 (defun string-or-null-p (object)
   "Return t if OBJECT is a string or nil.

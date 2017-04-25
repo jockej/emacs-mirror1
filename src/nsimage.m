@@ -1,5 +1,5 @@
 /* Image support for the NeXT/Open/GNUstep and macOS window system.
-   Copyright (C) 1989, 1992-1994, 2005-2006, 2008-2016 Free Software
+   Copyright (C) 1989, 1992-1994, 2005-2006, 2008-2017 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -179,13 +179,6 @@ ns_set_alpha (void *img, int x, int y, unsigned char a)
       return nil;
     }
 
-  /* The next two lines cause the DPI of the image to be ignored.
-     This seems to be the behavior users expect. */
-#ifdef NS_IMPL_COCOA
-#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6
-  [image setScalesWhenResized: YES];
-#endif
-#endif
   [image setSize: NSMakeSize([imgRep pixelsWide], [imgRep pixelsHigh])];
 
   [image setName: [NSString stringWithUTF8String: SSDATA (file)]];
@@ -355,13 +348,6 @@ ns_set_alpha (void *img, int x, int y, unsigned char a)
           if ([bmr numberOfPlanes] >= 3)
               [bmr getBitmapDataPlanes: pixmapData];
 
-          /* The next two lines cause the DPI of the image to be ignored.
-             This seems to be the behavior users expect. */
-#ifdef NS_IMPL_COCOA
-#if MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_6
-          [self setScalesWhenResized: YES];
-#endif
-#endif
           [self setSize: NSMakeSize([bmr pixelsWide], [bmr pixelsHigh])];
 
           break;

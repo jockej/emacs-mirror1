@@ -1,6 +1,6 @@
 ;;; ns-win.el --- lisp side of interface with NeXT/Open/GNUstep/macOS window system  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1993-1994, 2005-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1993-1994, 2005-2017 Free Software Foundation, Inc.
 
 ;; Authors: Carl Edman
 ;;	Christian Limpach
@@ -109,7 +109,7 @@ The properties returned may include `top', `left', `height', and `width'."
 (define-key global-map [?\s-:] 'ispell)
 (define-key global-map [?\s-?] 'info)
 (define-key global-map [?\s-^] 'kill-some-buffers)
-(define-key global-map [?\s-&] 'kill-this-buffer)
+(define-key global-map [?\s-&] 'kill-current-buffer)
 (define-key global-map [?\s-C] 'ns-popup-color-panel)
 (define-key global-map [?\s-D] 'dired)
 (define-key global-map [?\s-E] 'edit-abbrevs)
@@ -125,7 +125,7 @@ The properties returned may include `top', `left', `height', and `width'."
 (define-key global-map [?\s-h] 'ns-do-hide-emacs)
 (define-key global-map [?\s-H] 'ns-do-hide-others)
 (define-key global-map [?\s-j] 'exchange-point-and-mark)
-(define-key global-map [?\s-k] 'kill-this-buffer)
+(define-key global-map [?\s-k] 'kill-current-buffer)
 (define-key global-map [?\s-l] 'goto-line)
 (define-key global-map [?\s-m] 'iconify-frame)
 (define-key global-map [?\s-n] 'make-frame)

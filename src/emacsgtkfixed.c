@@ -1,7 +1,7 @@
 /* A Gtk Widget that inherits GtkFixed, but can be shrunk.
 This file is only use when compiling with Gtk+ 3.
 
-Copyright (C) 2011-2016 Free Software Foundation, Inc.
+Copyright (C) 2011-2017 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -148,7 +148,7 @@ emacs_fixed_class_init (EmacsFixedClass *klass)
 {
   GtkWidgetClass *widget_class;
 
-  widget_class = (GtkWidgetClass*) klass;
+  widget_class = (GtkWidgetClass *) klass;
 
   widget_class->get_preferred_width = emacs_fixed_get_preferred_width;
   widget_class->get_preferred_height = emacs_fixed_get_preferred_height;
@@ -205,9 +205,9 @@ emacs_fixed_get_preferred_height (GtkWidget *widget,
    (Bug#8919), and so users can resize our frames as they wish.  */
 
 void
-XSetWMSizeHints (Display* d,
+XSetWMSizeHints (Display *d,
                  Window w,
-                 XSizeHints* hints,
+                 XSizeHints *hints,
                  Atom prop)
 {
   struct x_display_info *dpyinfo = x_display_info_for_display (d);

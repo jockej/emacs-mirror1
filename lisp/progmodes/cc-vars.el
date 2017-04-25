@@ -1,6 +1,6 @@
 ;;; cc-vars.el --- user customization variables for CC Mode
 
-;; Copyright (C) 1985, 1987, 1992-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1985, 1987, 1992-2017 Free Software Foundation, Inc.
 
 ;; Authors:    2002- Alan Mackenzie
 ;;             1998- Martin Stjernholm
@@ -1115,7 +1115,7 @@ can always override the use of `c-default-style' by making calls to
        ;; Anchor pos: At the brace list decl start(*).
        (brace-list-intro      . +)
        ;; Anchor pos: At the brace list decl start(*).
-       (brace-list-entry      . 0)
+       (brace-list-entry      . c-lineup-under-anchor)
        ;; Anchor pos: At the first non-ws char after the open paren if
        ;; the first token is on the same line, otherwise boi at that
        ;; token.
@@ -1632,6 +1632,18 @@ capitalized words are treated as type names (the requirement for a
 lower case char is to avoid recognizing all-caps macro and constant
 names)."))
   :type 'c-extra-types-widget
+  :group 'c)
+
+(defcustom c-asymmetry-fontification-flag t
+  "Whether to fontify certain ambiguous constructs by white space asymmetry.
+
+In the fontification engine, it is sometimes impossible to determine
+whether a construct is a declaration or an expression.  This happens
+particularly in C++, due to ambiguities in the language.  When such a
+construct is like \"foo * bar\" or \"foo &bar\", and this variable is non-nil
+(the default), the construct will be fontified as a declaration if there is
+white space either before or after the operator, but not both."
+  :type 'boolean
   :group 'c)
 
 (defvar c-noise-macro-with-parens-name-re "\\<\\>")

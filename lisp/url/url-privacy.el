@@ -1,6 +1,6 @@
 ;;; url-privacy.el --- Global history tracking for URL package
 
-;; Copyright (C) 1996-1999, 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1999, 2004-2017 Free Software Foundation, Inc.
 
 ;; Keywords: comm, data, processes, hypermedia
 
@@ -43,7 +43,6 @@
 	 ((eq system-type 'windows-nt) "Windows-NT; 32bit")
 	 ((eq system-type 'ms-dos) "MS-DOS; 32bit")
 	 ((memq (url-device-type) '(win32 w32)) "Windows; 32bit")
-	 ((eq (url-device-type) 'pm) "OS/2; 32bit")
 	 (t
 	  (pcase (url-device-type)
 	    (`x "X11")

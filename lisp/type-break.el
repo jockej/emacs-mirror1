@@ -1,6 +1,6 @@
 ;;; type-break.el --- encourage rests from typing at appropriate intervals  -*- lexical-binding: t -*-
 
-;; Copyright (C) 1994-1995, 1997, 2000-2016 Free Software Foundation,
+;; Copyright (C) 1994-1995, 1997, 2000-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Noah Friedman
@@ -402,7 +402,7 @@ problems."
                                                'nowarn)
         (set-buffer-modified-p nil)
         (unlock-buffer)
-        (kill-this-buffer))))))
+        (kill-current-buffer))))))
 
 (define-minor-mode type-break-mode-line-message-mode
   "Toggle warnings about typing breaks in the mode line.

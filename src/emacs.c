@@ -1,6 +1,6 @@
 /* Fully extensible Emacs, running on Unix, intended for GNU.
 
-Copyright (C) 1985-1987, 1993-1995, 1997-1999, 2001-2016 Free Software
+Copyright (C) 1985-1987, 1993-1995, 1997-1999, 2001-2017 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -129,8 +129,6 @@ Lisp_Object Vlibrary_cache;
    on subsequent starts.  */
 bool initialized;
 
-bool generating_ldefs_boot;
-
 #ifndef CANNOT_DUMP
 /* Set to true if this instance of Emacs might dump.  */
 # ifndef DOUG_LEA_MALLOC
@@ -139,7 +137,7 @@ static
 bool might_dump;
 #endif
 
-#ifdef DARWIN_OS
+#if defined DARWIN_OS && !defined CANNOT_DUMP
 extern void unexec_init_emacs_zone (void);
 #endif
 
@@ -685,11 +683,12 @@ main (int argc, char **argv)
   /* Record (approximately) where the stack begins.  */
   stack_bottom = &stack_bottom_variable;
 
+#ifndef CANNOT_DUMP
   dumping = !initialized && (strcmp (argv[argc - 1], "dump") == 0
-			     || strcmp (argv[argc - 1], "bootstrap") == 0 );
-
-  generating_ldefs_boot = getenv ("GENERATE_LDEFS_BOOT");
-
+			     || strcmp (argv[argc - 1], "bootstrap") == 0);
+#else
+  dumping = false;
+#endif
 
   /* True if address randomization interferes with memory allocation.  */
 # ifdef __PPC64__
@@ -738,8 +737,6 @@ main (int argc, char **argv)
      non-ASCII file names during startup.  */
   w32_init_file_name_codepage ();
 #endif
-  /* This has to be done before module_init is called below, so that
-     the latter could use the thread ID of the main thread.  */
   w32_init_main_thread ();
 #endif
 
@@ -749,17 +746,13 @@ main (int argc, char **argv)
 #endif
 
 /* If using unexmacosx.c (set by s/darwin.h), we must do this. */
-#ifdef DARWIN_OS
+#if defined DARWIN_OS && !defined CANNOT_DUMP
   if (!initialized)
     unexec_init_emacs_zone ();
 #endif
 
   init_standard_fds ();
   atexit (close_output_streams);
-
-#ifdef HAVE_MODULES
-  module_init ();
-#endif
 
   sort_args (argc, argv);
   argc = 0;
@@ -837,14 +830,16 @@ main (int argc, char **argv)
       rlim_t lim = rlim.rlim_cur;
 
       /* Approximate the amount regex.c needs per unit of
-	 re_max_failures, then add 33% to cover the size of the
+	 emacs_re_max_failures, then add 33% to cover the size of the
 	 smaller stacks that regex.c successively allocates and
 	 discards on its way to the maximum.  */
-      int ratio = 20 * sizeof (char *);
-      ratio += ratio / 3;
+      int min_ratio = 20 * sizeof (char *);
+      int ratio = min_ratio + min_ratio / 3;
 
-      /* Extra space to cover what we're likely to use for other reasons.  */
-      int extra = 200000;
+      /* Extra space to cover what we're likely to use for other
+         reasons.  For example, a typical GC might take 30K stack
+         frames.  */
+      int extra = (30 * 1000) * 50;
 
       bool try_to_grow_stack = true;
 #ifndef CANNOT_DUMP
@@ -853,7 +848,7 @@ main (int argc, char **argv)
 
       if (try_to_grow_stack)
 	{
-	  rlim_t newlim = re_max_failures * ratio + extra;
+	  rlim_t newlim = emacs_re_max_failures * ratio + extra;
 
 	  /* Round the new limit to a page boundary; this is needed
 	     for Darwin kernel 15.4.0 (see Bug#23622) and perhaps
@@ -875,9 +870,11 @@ main (int argc, char **argv)
 		lim = newlim;
 	    }
 	}
-
-      /* Don't let regex.c overflow the stack.  */
-      re_max_failures = lim < extra ? 0 : min (lim - extra, SIZE_MAX) / ratio;
+      /* If the stack is big enough, let regex.c more of it before
+         falling back to heap allocation.  */
+      emacs_re_safe_alloca = max
+        (min (lim - extra, SIZE_MAX) * (min_ratio / ratio),
+         MAX_ALLOCA);
     }
 #endif /* HAVE_SETRLIMIT and RLIMIT_STACK and not CYGWIN */
 
@@ -896,9 +893,9 @@ main (int argc, char **argv)
 #endif	/* not SYSTEM_MALLOC and not HYBRID_MALLOC */
 
 #ifdef MSDOS
-  SET_BINARY (fileno (stdin));
+  set_binary_mode (STDIN_FILENO, O_BINARY);
   fflush (stdout);
-  SET_BINARY (fileno (stdout));
+  set_binary_mode (STDOUT_FILENO, O_BINARY);
 #endif /* MSDOS */
 
   /* Skip initial setlocale if LC_ALL is "C", as it's not needed in that case.
@@ -2610,7 +2607,12 @@ This is nil during initialization.  */);
   Vemacs_copyright = build_string (emacs_copyright);
 
   DEFVAR_LISP ("emacs-version", Vemacs_version,
-	       doc: /* Version numbers of this version of Emacs.  */);
+	       doc: /* Version numbers of this version of Emacs.
+This has the form: MAJOR.MINOR[.MICRO], where MAJOR/MINOR/MICRO are integers.
+MICRO is only present in unreleased development versions,
+and is not especially meaningful.  Prior to Emacs 26.1, an extra final
+component .BUILD is present.  This is now stored separately in
+`emacs-build-number'.  */);
   Vemacs_version = build_string (emacs_version);
 
   DEFVAR_LISP ("report-emacs-bug-address", Vreport_emacs_bug_address,

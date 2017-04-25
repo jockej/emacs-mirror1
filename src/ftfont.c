@@ -1,5 +1,5 @@
 /* ftfont.c -- FreeType font driver.
-   Copyright (C) 2006-2016 Free Software Foundation, Inc.
+   Copyright (C) 2006-2017 Free Software Foundation, Inc.
    Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
      Registration Number H13PRO009
@@ -1546,7 +1546,8 @@ ftfont_get_metrics (MFLTFont *font, MFLTGlyphString *gstring,
 	  {
 	    FT_Glyph_Metrics *m;
 
-	    if (FT_Load_Glyph (ft_face, g->g.code, FT_LOAD_DEFAULT) != 0)
+	    if (FT_Load_Glyph (ft_face, g->g.code, FT_LOAD_DEFAULT) != 0
+		&& FT_Load_Glyph (ft_face, g->g.code, FT_LOAD_NO_HINTING) != 0)
 	      emacs_abort ();
 	    m = &ft_face->glyph->metrics;
 	    if (flt_font_ft->matrix)

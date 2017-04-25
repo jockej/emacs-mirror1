@@ -1,6 +1,6 @@
 ;;; follow.el --- synchronize windows showing the same buffer
 
-;; Copyright (C) 1995-1997, 1999, 2001-2016 Free Software Foundation,
+;; Copyright (C) 1995-1997, 1999, 2001-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Anders Lindgren
@@ -426,6 +426,9 @@ Keys specific to Follow mode:
         (add-hook 'isearch-update-post-hook 'follow-post-command-hook nil t)
         (add-hook 'replace-update-post-hook 'follow-post-command-hook nil t)
         (add-hook 'ispell-update-post-hook 'follow-post-command-hook nil t)
+
+        (when isearch-lazy-highlight
+          (setq-local isearch-lazy-highlight 'all-windows))
 
         (setq window-group-start-function 'follow-window-start)
         (setq window-group-end-function 'follow-window-end)

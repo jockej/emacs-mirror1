@@ -1,6 +1,6 @@
 ;;; pcase.el --- ML-style pattern-matching macro for Elisp -*- lexical-binding: t -*-
 
-;; Copyright (C) 2010-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2017 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Keywords:
@@ -89,7 +89,8 @@
        (functionp &rest form)
        sexp))
 
-(def-edebug-spec pcase-MACRO pcase--edebug-match-macro)
+;; See bug#24717
+(put 'pcase-MACRO 'edebug-form-spec 'pcase--edebug-match-macro)
 
 ;; Only called from edebug.
 (declare-function get-edebug-spec "edebug" (symbol))
@@ -174,8 +175,8 @@ Emacs Lisp manual for more information and examples."
       ;; (when (gethash (car cases) pcase--memoize-2)
       ;;   (message "pcase-memoize failed because of eq test on %S"
       ;;            (car cases)))
-      (when data
-        (message "pcase-memoize: equal first branch, yet different"))
+      ;; (when data
+      ;;   (message "pcase-memoize: equal first branch, yet different"))
       (let ((expansion (pcase--expand exp cases)))
         (puthash (car cases) `(,exp ,cases ,@expansion) pcase--memoize)
         ;; (puthash (car cases) `(,exp ,cases ,@expansion) pcase--memoize-1)
@@ -436,8 +437,10 @@ to this macro."
   ;; Don't use let*, otherwise macroexp-let* may merge it with some surrounding
   ;; let* which might prevent the setcar/setcdr in pcase--expand's fancy
   ;; codegen from later metamorphosing this let into a funcall.
-  `(let ,(mapcar (lambda (b) (list (car b) (cdr b))) vars)
-     ,@code))
+  (if vars
+      `(let ,(mapcar (lambda (b) (list (car b) (cdr b))) vars)
+         ,@code)
+    `(progn ,@code)))
 
 (defun pcase--small-branch-p (code)
   (and (= 1 (length code))
@@ -500,24 +503,30 @@ MATCH is the pattern that needs to be matched, of the form:
     (symbolp . vectorp)
     (symbolp . stringp)
     (symbolp . byte-code-function-p)
+    (symbolp . recordp)
     (integerp . consp)
     (integerp . arrayp)
     (integerp . vectorp)
     (integerp . stringp)
     (integerp . byte-code-function-p)
+    (integerp . recordp)
     (numberp . consp)
     (numberp . arrayp)
     (numberp . vectorp)
     (numberp . stringp)
     (numberp . byte-code-function-p)
+    (numberp . recordp)
     (consp . arrayp)
     (consp . atom)
     (consp . vectorp)
     (consp . stringp)
     (consp . byte-code-function-p)
+    (consp . recordp)
     (arrayp . byte-code-function-p)
     (vectorp . byte-code-function-p)
+    (vectorp . recordp)
     (stringp . vectorp)
+    (stringp . recordp)
     (stringp . byte-code-function-p)))
 
 (defun pcase--mutually-exclusive-p (pred1 pred2)

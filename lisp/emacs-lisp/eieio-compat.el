@@ -1,6 +1,6 @@
 ;;; eieio-compat.el --- Compatibility with Older EIEIO versions  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1995-1996, 1998-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1995-1996, 1998-2017 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: OO, lisp
@@ -145,7 +145,7 @@ Summary:
   ;; interleaved list comes before the class's non-interleaved list.
   51 #'cl--generic-struct-tag
   (lambda (tag &rest _)
-    (and (symbolp tag) (boundp tag) (setq tag (symbol-value tag))
+    (and (symbolp tag) (setq tag (cl--find-class tag))
          (eieio--class-p tag)
          (let ((superclasses (eieio--class-precedence-list tag))
                (specializers ()))

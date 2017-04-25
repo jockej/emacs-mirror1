@@ -1,7 +1,7 @@
 /* A general interface to the widgets of different toolkits.
 
 Copyright (C) 1992, 1993 Lucid, Inc.
-Copyright (C) 1994-1996, 1999-2016 Free Software Foundation, Inc.
+Copyright (C) 1994-1996, 1999-2017 Free Software Foundation, Inc.
 
 This file is part of the Lucid Widget Library.
 
@@ -26,7 +26,6 @@ along with GNU Emacs.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include <sys/types.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include "lwlib-int.h"
 #include "lwlib-utils.h"
 #include <X11/StringDefs.h>
@@ -721,13 +720,13 @@ instantiate_widget_instance (widget_instance *instance)
     {
       printf ("No creation function for widget type %s\n",
 	      instance->info->type);
-      abort ();
+      emacs_abort ();
     }
 
   instance->widget = (*function) (instance);
 
   if (!instance->widget)
-    abort ();
+    emacs_abort ();
 
   /*   XtRealizeWidget (instance->widget);*/
 }
@@ -772,7 +771,7 @@ lw_make_widget (LWLIB_ID id, Widget parent, Boolean pop_up_p)
       initialize_widget_instance (instance);
     }
   if (!instance->widget)
-    abort ();
+    emacs_abort ();
   return instance->widget;
 }
 

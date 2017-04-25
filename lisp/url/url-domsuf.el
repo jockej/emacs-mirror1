@@ -1,6 +1,6 @@
 ;;; url-domsuf.el --- Say what domain names can have cookies set.
 
-;; Copyright (C) 2012-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2012-2017 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 
@@ -89,7 +89,7 @@
 
 ;; Tests:
 
-;; TODO convert to a proper test/automated test.
+;; TODO convert to a proper test.
 ;; (url-domsuf-cookie-allowed-p "com") => nil
 ;; (url-domsuf-cookie-allowed-p "foo.bar.bd") => t
 ;; (url-domsuf-cookie-allowed-p "bar.bd") => nil

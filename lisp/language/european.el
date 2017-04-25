@@ -1,6 +1,6 @@
 ;;; european.el --- support for European languages -*- coding: utf-8; -*-
 
-;; Copyright (C) 1997-1998, 2000-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1997-1998, 2000-2017 Free Software Foundation, Inc.
 ;; Copyright (C) 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004,
 ;;   2005, 2006, 2007, 2008, 2009, 2010, 2011
 ;;   National Institute of Advanced Industrial Science and Technology (AIST)
@@ -506,7 +506,7 @@ and it selects the Spanish tutorial."))
 	     (input-method . "turkish-postfix")
 	     (sample-text . "Turkish (Türkçe)	Merhaba")
 	     (setup-function . turkish-case-conversion-enable)
-	     (setup-function . turkish-case-conversion-disable)
+	     (exit-function . turkish-case-conversion-disable)
 	     (documentation . "Support for Turkish.
 Differs from the Latin-5 environment in using the `turkish-postfix' input
 method and applying Turkish case rules for the characters i, I, ı, İ.")))

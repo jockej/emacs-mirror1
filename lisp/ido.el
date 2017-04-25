@@ -1,6 +1,6 @@
 ;;; ido.el --- interactively do things with buffers and files
 
-;; Copyright (C) 1996-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1996-2017 Free Software Foundation, Inc.
 
 ;; Author: Kim F. Storm <storm@cua.dk>
 ;; Based on: iswitchb by Stephen Eglen <stephen@cns.ed.ac.uk>
@@ -1882,7 +1882,6 @@ If INITIAL is non-nil, it specifies the initial input string."
        ido-selected
        ido-final-text
        (done nil)
-       (non-essential t) ;; prevent eager Tramp connection
        (icomplete-mode nil) ;; prevent icomplete starting up
        ;; Exported dynamic variables:
        ido-cur-list
@@ -3556,7 +3555,6 @@ it is put to the start of the list."
     ;; Strip method:user@host: part of tramp completions.
     ;; Tramp completions do not include leading slash.
     (let* ((len (1- (length dir)))
-	   (non-essential t)
 	   (compl
 	    (or ;; We do not want to be disturbed by "File does not
                 ;; exist" errors.

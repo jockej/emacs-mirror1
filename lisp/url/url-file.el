@@ -1,6 +1,6 @@
 ;;; url-file.el --- File retrieval code
 
-;; Copyright (C) 1996-1999, 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1996-1999, 2004-2017 Free Software Foundation, Inc.
 
 ;; Keywords: comm, data, processes
 
@@ -89,7 +89,7 @@ to them."
 			    keep-date &optional msg cont nowait))
 
 (defun url-file-build-filename (url)
-  (if (not (vectorp url))
+  (if (not (url-p url))
       (setq url (url-generic-parse-url url)))
   (let* ((user (url-user url))
 	 (pass (url-password url))

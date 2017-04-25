@@ -1,6 +1,6 @@
 /* Keyboard and mouse input; editor command loop.
 
-Copyright (C) 1985-1989, 1993-1997, 1999-2016 Free Software Foundation,
+Copyright (C) 1985-1989, 1993-1997, 1999-2017 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -87,7 +87,7 @@ char const DEV_TTY[] = "/dev/tty";
 volatile int interrupt_input_blocked;
 
 /* True means an input interrupt or alarm signal has arrived.
-   The QUIT macro checks this.  */
+   The maybe_quit function checks this.  */
 volatile bool pending_signals;
 
 #define KBD_BUFFER_SIZE 4096
@@ -168,9 +168,6 @@ struct kboard *echo_kboard;
    cancel_echoing.  */
 
 Lisp_Object echo_message_buffer;
-
-/* True means C-g should cause immediate error-signal.  */
-bool immediate_quit;
 
 /* Character that causes a quit.  Normally C-g.
 
@@ -1416,7 +1413,7 @@ command_loop_1 (void)
 	  if (!NILP (Vquit_flag))
 	    {
 	      Vexecuting_kbd_macro = Qt;
-	      QUIT;		/* Make some noise.  */
+	      maybe_quit ();	/* Make some noise.  */
 				/* Will return since macro now empty.  */
 	    }
 	}
@@ -2166,9 +2163,9 @@ read_event_from_main_queue (struct timespec *end_time,
       if (CONSP (last))
         {
           while (CONSP (XCDR (last)))
-      	last = XCDR (last);
+	    last = XCDR (last);
           if (!NILP (XCDR (last)))
-      	emacs_abort ();
+	    emacs_abort ();
         }
       if (!CONSP (last))
         kset_kbd_queue (kb, list1 (c));
@@ -3252,7 +3249,7 @@ record_char (Lisp_Object c)
 	    }
 	}
     }
-  else
+  else if (NILP (Vexecuting_kbd_macro))
     store_kbd_macro_char (c);
 
   /* recent_keys should not include events from keyboard macros.  */
@@ -3588,16 +3585,7 @@ kbd_buffer_store_buffered_event (union buffered_input_event *event,
      as input, set quit-flag to cause an interrupt.  */
   if (!NILP (Vthrow_on_input)
       && NILP (Fmemq (ignore_event, Vwhile_no_input_ignore_events)))
-    {
-      Vquit_flag = Vthrow_on_input;
-      /* If we're inside a function that wants immediate quits,
-	 do it now.  */
-      if (immediate_quit && NILP (Vinhibit_quit))
-	{
-	  immediate_quit = false;
-	  QUIT;
-	}
-    }
+    Vquit_flag = Vthrow_on_input;
 }
 
 
@@ -4072,6 +4060,14 @@ kbd_buffer_get_event (KBOARD **kbp,
 	  kbd_fetch_ptr = event + 1;
 	}
 #endif
+#if defined (HAVE_X11) || defined (HAVE_NTGUI) || defined (HAVE_NS)
+      else if (event->kind == MOVE_FRAME_EVENT)
+	{
+	  /* Make an event (move-frame (FRAME)).  */
+	  obj = list2 (Qmove_frame, list1 (event->ie.frame_or_window));
+	  kbd_fetch_ptr = event + 1;
+	}
+#endif
 #ifdef HAVE_XWIDGETS
       else if (event->kind == XWIDGET_EVENT)
 	{
@@ -4082,6 +4078,11 @@ kbd_buffer_get_event (KBOARD **kbp,
       else if (event->kind == CONFIG_CHANGED_EVENT)
 	{
 	  obj = make_lispy_event (&event->ie);
+	  kbd_fetch_ptr = event + 1;
+	}
+      else if (event->kind == SELECT_WINDOW_EVENT)
+	{
+	  obj = list2 (Qselect_window, list1 (event->ie.frame_or_window));
 	  kbd_fetch_ptr = event + 1;
 	}
       else
@@ -5437,26 +5438,26 @@ make_lispy_event (struct input_event *event)
            not.  And Control+Shift+s should produce C-S-s whether
            caps-lock is on or not.  */
         if (event->modifiers & ~shift_modifier)
-        {
+	  {
             /* This is a key chord: some non-shift modifier is
                depressed.  */
 
             if (uppercasep (c) &&
                 !(event->modifiers & shift_modifier))
-            {
+	      {
                 /* Got a capital letter without a shift.  The caps
                    lock is on.   Un-capitalize the letter.  */
                 c = downcase (c);
-            }
+	      }
             else if (lowercasep (c) &&
                      (event->modifiers & shift_modifier))
-            {
+	      {
                 /* Got a lower-case letter even though shift is
                    depressed.  The caps lock is on.  Capitalize the
                    letter.  */
                 c = upcase (c);
-            }
-        }
+	      }
+	  }
 
 	if (event->kind == ASCII_KEYSTROKE_EVENT)
 	  {
@@ -7057,40 +7058,22 @@ tty_read_avail_input (struct terminal *terminal,
 
   /* Now read; for one reason or another, this will not block.
      NREAD is set to the number of chars read.  */
-  do
-    {
-      nread = emacs_read (fileno (tty->input), (char *) cbuf, n_to_read);
-      /* POSIX infers that processes which are not in the session leader's
-         process group won't get SIGHUPs at logout time.  BSDI adheres to
-         this part standard and returns -1 from read (0) with errno==EIO
-         when the control tty is taken away.
-         Jeffrey Honig <jch@bsdi.com> says this is generally safe.  */
-      if (nread == -1 && errno == EIO)
-        return -2;          /* Close this terminal.  */
-#if defined (AIX) && defined (_BSD)
-      /* The kernel sometimes fails to deliver SIGHUP for ptys.
-         This looks incorrect, but it isn't, because _BSD causes
-         O_NDELAY to be defined in fcntl.h as O_NONBLOCK,
-         and that causes a value other than 0 when there is no input.  */
-      if (nread == 0)
-        return -2;          /* Close this terminal.  */
+  nread = emacs_read (fileno (tty->input), (char *) cbuf, n_to_read);
+  /* POSIX infers that processes which are not in the session leader's
+     process group won't get SIGHUPs at logout time.  BSDI adheres to
+     this part standard and returns -1 from read (0) with errno==EIO
+     when the control tty is taken away.
+     Jeffrey Honig <jch@bsdi.com> says this is generally safe.  */
+  if (nread == -1 && errno == EIO)
+    return -2;          /* Close this terminal.  */
+#if defined AIX && defined _BSD
+  /* The kernel sometimes fails to deliver SIGHUP for ptys.
+     This looks incorrect, but it isn't, because _BSD causes
+     O_NDELAY to be defined in fcntl.h as O_NONBLOCK,
+     and that causes a value other than 0 when there is no input.  */
+  if (nread == 0)
+    return -2;          /* Close this terminal.  */
 #endif
-    }
-  while (
-         /* We used to retry the read if it was interrupted.
-            But this does the wrong thing when O_NONBLOCK causes
-            an EAGAIN error.  Does anybody know of a situation
-            where a retry is actually needed?  */
-#if 0
-         nread < 0 && (errno == EAGAIN || errno == EFAULT
-#ifdef EBADSLT
-                       || errno == EBADSLT
-#endif
-                       )
-#else
-         0
-#endif
-         );
 
 #ifndef USABLE_FIONREAD
 #if defined (USG) || defined (CYGWIN)
@@ -7430,7 +7413,7 @@ menu_bar_items (Lisp_Object old)
   USE_SAFE_ALLOCA;
 
   /* In order to build the menus, we need to call the keymap
-     accessors.  They all call QUIT.  But this function is called
+     accessors.  They all call maybe_quit.  But this function is called
      during redisplay, during which a quit is fatal.  So inhibit
      quitting while building the menus.
      We do this instead of specbind because (1) errors will clear it anyway
@@ -7991,7 +7974,7 @@ tool_bar_items (Lisp_Object reuse, int *nitems)
   *nitems = 0;
 
   /* In order to build the menus, we need to call the keymap
-     accessors.  They all call QUIT.  But this function is called
+     accessors.  They all call maybe_quit.  But this function is called
      during redisplay, during which a quit is fatal.  So inhibit
      quitting while building the menus.  We do this instead of
      specbind because (1) errors will clear it anyway and (2) this
@@ -9676,21 +9659,25 @@ read_key_sequence (Lisp_Object *keybuf, int bufsize, Lisp_Object prompt,
 	 use the corresponding lower-case letter instead.  */
       if (NILP (current_binding)
 	  && /* indec.start >= t && fkey.start >= t && */ keytran.start >= t
-	  && INTEGERP (key)
-	  && ((CHARACTERP (make_number (XINT (key) & ~CHAR_MODIFIER_MASK))
-	       && uppercasep (XINT (key) & ~CHAR_MODIFIER_MASK))
-	      || (XINT (key) & shift_modifier)))
+	  && INTEGERP (key))
 	{
 	  Lisp_Object new_key;
+	  EMACS_INT k = XINT (key);
+
+	  if (k & shift_modifier)
+	    XSETINT (new_key, k & ~shift_modifier);
+	  else if (CHARACTERP (make_number (k & ~CHAR_MODIFIER_MASK)))
+	    {
+	      int dc = downcase (k & ~CHAR_MODIFIER_MASK);
+	      if (dc == (k & ~CHAR_MODIFIER_MASK))
+		goto not_upcase;
+	      XSETINT (new_key, dc | (k & CHAR_MODIFIER_MASK));
+	    }
+	  else
+	    goto not_upcase;
 
 	  original_uppercase = key;
 	  original_uppercase_position = t - 1;
-
-	  if (XINT (key) & shift_modifier)
-	    XSETINT (new_key, XINT (key) & ~shift_modifier);
-	  else
-	    XSETINT (new_key, (downcase (XINT (key) & ~CHAR_MODIFIER_MASK)
-			       | (XINT (key) & CHAR_MODIFIER_MASK)));
 
 	  /* We have to do this unconditionally, regardless of whether
 	     the lower-case char is defined in the keymaps, because they
@@ -9702,6 +9689,7 @@ read_key_sequence (Lisp_Object *keybuf, int bufsize, Lisp_Object prompt,
 	  goto replay_sequence;
 	}
 
+    not_upcase:
       if (NILP (current_binding)
 	  && help_char_p (EVENT_HEAD (key)) && t > 1)
 	    {
@@ -9810,7 +9798,7 @@ read_key_sequence_vs (Lisp_Object prompt, Lisp_Object continue_echo,
 
   if (!NILP (prompt))
     CHECK_STRING (prompt);
-  QUIT;
+  maybe_quit ();
 
   specbind (Qinput_method_exit_on_first_char,
 	    (NILP (cmd_loop) ? Qt : Qnil));
@@ -9844,7 +9832,7 @@ read_key_sequence_vs (Lisp_Object prompt, Lisp_Object continue_echo,
   if (i == -1)
     {
       Vquit_flag = Qt;
-      QUIT;
+      maybe_quit ();
     }
 
   return unbind_to (count,
@@ -10033,6 +10021,30 @@ See also `this-command-keys-vector'.  */)
 {
   return make_event_array (this_command_key_count,
 			   XVECTOR (this_command_keys)->contents);
+}
+
+DEFUN ("set--this-command-keys", Fset__this_command_keys,
+       Sset__this_command_keys, 1, 1, 0,
+       doc: /* Set the vector to be returned by `this-command-keys'.
+The argument KEYS must be a string.
+Internal use only.  */)
+  (Lisp_Object keys)
+{
+  CHECK_STRING (keys);
+
+  this_command_key_count = 0;
+  this_single_command_key_start = 0;
+  int key0 = SREF (keys, 0);
+
+  /* Kludge alert: this makes M-x be in the form expected by
+     novice.el.  (248 is \370, a.k.a. "Meta-x".)  Any better ideas?  */
+  if (key0 == 248)
+    add_command_key (make_number ('x' | meta_modifier));
+  else
+    add_command_key (make_number (key0));
+  for (ptrdiff_t i = 1; i < SCHARS (keys); i++)
+    add_command_key (make_number (SREF (keys, i)));
+  return Qnil;
 }
 
 DEFUN ("this-command-keys-vector", Fthis_command_keys_vector, Sthis_command_keys_vector, 0, 0, 0,
@@ -10282,7 +10294,7 @@ clear_waiting_for_input (void)
 
    If we have a frame on the controlling tty, we assume that the
    SIGINT was generated by C-g, so we call handle_interrupt.
-   Otherwise, tell QUIT to kill Emacs.  */
+   Otherwise, tell maybe_quit to kill Emacs.  */
 
 static void
 handle_interrupt_signal (int sig)
@@ -10293,7 +10305,7 @@ handle_interrupt_signal (int sig)
     {
       /* If there are no frames there, let's pretend that we are a
          well-behaving UN*X program and quit.  We must not call Lisp
-         in a signal handler, so tell QUIT to exit when it is
+         in a signal handler, so tell maybe_quit to exit when it is
          safe.  */
       Vquit_flag = Qkill_emacs;
     }
@@ -10449,30 +10461,12 @@ handle_interrupt (bool in_signal_handler)
     }
   else
     {
-      /* If executing a function that wants to be interrupted out of
-	 and the user has not deferred quitting by binding `inhibit-quit'
-	 then quit right away.  */
-      if (immediate_quit && NILP (Vinhibit_quit))
-	{
-	  struct gl_state_s saved;
-
-	  immediate_quit = false;
-	  pthread_sigmask (SIG_SETMASK, &empty_mask, 0);
-	  saved = gl_state;
-	  quit ();
-	  gl_state = saved;
-	}
-      else
-        { /* Else request quit when it's safe.  */
-	  int count = NILP (Vquit_flag) ? 1 : force_quit_count + 1;
-	  force_quit_count = count;
-	  if (count == 3)
-            {
-              immediate_quit = true;
-              Vinhibit_quit = Qnil;
-            }
-          Vquit_flag = Qt;
-        }
+      /* Request quit when it's safe.  */
+      int count = NILP (Vquit_flag) ? 1 : force_quit_count + 1;
+      force_quit_count = count;
+      if (count == 3)
+	Vinhibit_quit = Qnil;
+      Vquit_flag = Qt;
     }
 
   pthread_sigmask (SIG_SETMASK, &empty_mask, 0);
@@ -10781,13 +10775,13 @@ The `posn-' functions access elements of such lists.  */)
 }
 
 DEFUN ("posn-at-point", Fposn_at_point, Sposn_at_point, 0, 2, 0,
-       doc: /* Return position information for buffer POS in WINDOW.
+       doc: /* Return position information for buffer position POS in WINDOW.
 POS defaults to point in WINDOW; WINDOW defaults to the selected window.
 
-Return nil if position is not visible in window.  Otherwise,
+Return nil if POS is not visible in WINDOW.  Otherwise,
 the return value is similar to that returned by `event-start' for
 a mouse click at the upper left corner of the glyph corresponding
-to the given buffer position:
+to POS:
    (WINDOW AREA-OR-POS (X . Y) TIMESTAMP OBJECT POS (COL . ROW)
     IMAGE (DX . DY) (WIDTH . HEIGHT))
 The `posn-' functions access elements of such lists.  */)
@@ -10911,7 +10905,6 @@ init_keyboard (void)
 {
   /* This is correct before outermost invocation of the editor loop.  */
   command_loop_level = -1;
-  immediate_quit = false;
   quit_char = Ctl ('g');
   Vunread_command_events = Qnil;
   timer_idleness_start_time = invalid_timespec ();
@@ -11001,6 +10994,7 @@ static const struct event_head head_table[] = {
 
   {SYMBOL_INDEX (Qfocus_in),            SYMBOL_INDEX (Qfocus_in)},
   {SYMBOL_INDEX (Qfocus_out),           SYMBOL_INDEX (Qfocus_out)},
+  {SYMBOL_INDEX (Qmove_frame),          SYMBOL_INDEX (Qmove_frame)},
   {SYMBOL_INDEX (Qdelete_frame),        SYMBOL_INDEX (Qdelete_frame)},
   {SYMBOL_INDEX (Qiconify_frame),       SYMBOL_INDEX (Qiconify_frame)},
   {SYMBOL_INDEX (Qmake_frame_visible),  SYMBOL_INDEX (Qmake_frame_visible)},
@@ -11173,6 +11167,7 @@ syms_of_keyboard (void)
   DEFSYM (Qswitch_frame, "switch-frame");
   DEFSYM (Qfocus_in, "focus-in");
   DEFSYM (Qfocus_out, "focus-out");
+  DEFSYM (Qmove_frame, "move-frame");
   DEFSYM (Qdelete_frame, "delete-frame");
   DEFSYM (Qiconify_frame, "iconify-frame");
   DEFSYM (Qmake_frame_visible, "make-frame-visible");
@@ -11264,6 +11259,7 @@ syms_of_keyboard (void)
   defsubr (&Sthis_command_keys_vector);
   defsubr (&Sthis_single_command_keys);
   defsubr (&Sthis_single_command_raw_keys);
+  defsubr (&Sset__this_command_keys);
   defsubr (&Sclear_this_command_keys);
   defsubr (&Ssuspend_emacs);
   defsubr (&Sabort_recursive_edit);
@@ -11918,6 +11914,8 @@ keys_of_keyboard (void)
 			    "handle-focus-in");
   initial_define_lispy_key (Vspecial_event_map, "focus-out",
 			    "handle-focus-out");
+  initial_define_lispy_key (Vspecial_event_map, "move-frame",
+			    "handle-move-frame");
 }
 
 /* Mark the pointers in the kboard objects.

@@ -118,6 +118,23 @@ var arr = [
     -5
 ];
 
+// Regression test for bug#15582.
+if (x > 72 &&
+    y < 85) { // found
+  do_something();
+}
+
+// Test that chaining doesn't happen when js-chain-indent is nil.
+let x = svg.mumble()
+    .zzz;
+
+// https://github.com/mooz/js2-mode/issues/405
+if (1) {
+  isSet
+    ? (isEmpty ? 2 : 3)
+    : 4
+}
+
 // Local Variables:
 // indent-tabs-mode: nil
 // js-indent-level: 2

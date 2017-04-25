@@ -1,6 +1,6 @@
 ;;; obarray-tests.el --- Tests for obarray -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2015-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2015-2017 Free Software Foundation, Inc.
 
 ;; Author: Przemysław Wojnowski <esperanto@cumego.com>
 
@@ -43,14 +43,16 @@
 (ert-deftest obarray-make-default-test ()
   (let ((table (obarray-make)))
     (should (obarrayp table))
-    (should (equal (make-vector 59 0) table))))
+    (should (eq (obarray-size table) obarray-default-size))))
 
 (ert-deftest obarray-make-with-size-test ()
+  ;; FIXME: Actually, `wrong-type-argument' is not the right error to signal,
+  ;; so we shouldn't enforce this misbehavior in tests!
   (should-error (obarray-make -1) :type 'wrong-type-argument)
   (should-error (obarray-make 0) :type 'wrong-type-argument)
   (let ((table (obarray-make 1)))
     (should (obarrayp table))
-    (should (equal (make-vector 1 0) table))))
+    (should (eq (obarray-size table) 1))))
 
 (ert-deftest obarray-get-test ()
   (let ((table (obarray-make 3)))

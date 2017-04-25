@@ -1,6 +1,6 @@
-;;; tramp-cmds.el --- Interactive commands for Tramp
+;;; tramp-cmds.el --- Interactive commands for Tramp  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2007-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2017 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 ;; Keywords: comm, processes
@@ -36,6 +36,20 @@
 (declare-function reporter-dump-variable "reporter")
 (defvar reporter-eval-buffer)
 (defvar reporter-prompt-for-summary-p)
+
+;;;###autoload
+(defun tramp-change-syntax (&optional syntax)
+  "Change Tramp syntax.
+SYNTAX can be one of the symbols `default' (default),
+`simplified' (ange-ftp like) or `separate' (XEmacs like)."
+  (interactive
+   (let ((input (completing-read
+		 "Enter Tramp syntax: " (tramp-syntax-values) nil t
+		 (symbol-name tramp-syntax))))
+     (unless (string-equal input "")
+       (list (intern input)))))
+  (when syntax
+    (custom-set-variables `(tramp-syntax ',syntax))))
 
 (defun tramp-list-tramp-buffers ()
   "Return a list of all Tramp connection buffers."
@@ -190,7 +204,7 @@ This includes password cache, file cache, connection cache, buffers."
 	     password-cache
 	     password-cache-expiry
 	     remote-file-name-inhibit-cache
-	     connection-local-class-alist
+	     connection-local-profile-alist
 	     connection-local-criteria-alist
 	     file-name-handler-alist))))
 	(lambda (x y) (string< (symbol-name (car x)) (symbol-name (car y)))))

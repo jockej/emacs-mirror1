@@ -1,5 +1,5 @@
 /* Indentation functions.
-   Copyright (C) 1985-1988, 1993-1995, 1998, 2000-2016 Free Software
+   Copyright (C) 1985-1988, 1993-1995, 1998, 2000-2017 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -1203,9 +1203,6 @@ compute_motion (ptrdiff_t from, ptrdiff_t frombyte, EMACS_INT fromvpos,
     continuation_glyph_width = 0;  /* In the fringe.  */
 #endif
 
-  immediate_quit = 1;
-  QUIT;
-
   /* It's just impossible to be too paranoid here.  */
   eassert (from == BYTE_TO_CHAR (frombyte) && frombyte == CHAR_TO_BYTE (from));
 
@@ -1217,8 +1214,12 @@ compute_motion (ptrdiff_t from, ptrdiff_t frombyte, EMACS_INT fromvpos,
   cmp_it.id = -1;
   composition_compute_stop_pos (&cmp_it, pos, pos_byte, to, Qnil);
 
-  while (1)
+  unsigned short int quit_count = 0;
+
+  while (true)
     {
+      rarely_quit (++quit_count);
+
       while (pos == next_boundary)
 	{
 	  ptrdiff_t pos_here = pos;
@@ -1283,6 +1284,8 @@ compute_motion (ptrdiff_t from, ptrdiff_t frombyte, EMACS_INT fromvpos,
 	      pos = newpos;
 	      pos_byte = CHAR_TO_BYTE (pos);
 	    }
+
+	  rarely_quit (++quit_count);
 	}
 
       /* Handle right margin.  */
@@ -1605,6 +1608,7 @@ compute_motion (ptrdiff_t from, ptrdiff_t frombyte, EMACS_INT fromvpos,
 			      pos = find_before_next_newline (pos, to, 1, &pos_byte);
 			      if (pos < to)
 				INC_BOTH (pos, pos_byte);
+			      rarely_quit (++quit_count);
 			    }
 			  while (pos < to
 				 && indented_beyond_p (pos, pos_byte,
@@ -1697,7 +1701,6 @@ compute_motion (ptrdiff_t from, ptrdiff_t frombyte, EMACS_INT fromvpos,
   /* Nonzero if have just continued a line */
   val_compute_motion.contin = (contin_hpos && prev_hpos == 0);
 
-  immediate_quit = 0;
   return &val_compute_motion;
 }
 

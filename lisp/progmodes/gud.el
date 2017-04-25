@@ -1,6 +1,6 @@
 ;;; gud.el --- Grand Unified Debugger mode for running GDB and other debuggers  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1992-1996, 1998, 2000-2016 Free Software Foundation,
+;; Copyright (C) 1992-1996, 1998, 2000-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Eric S. Raymond <esr@snark.thyrsus.com>
@@ -146,7 +146,11 @@ Used to gray out relevant toolbar icons.")
     ([refresh]	"Refresh" . gud-refresh)
     ([run]	menu-item "Run" gud-run
                   :enable (not gud-running)
-		  :visible (memq gud-minor-mode '(gdbmi gdb dbx jdb)))
+		  :visible (or (memq gud-minor-mode '(gdb dbx jdb))
+			       (and (eq gud-minor-mode 'gdbmi)
+				    (or (not (gdb-show-run-p))
+					(bound-and-true-p
+					 gdb-active-process)))))
     ([go]	menu-item (if (bound-and-true-p gdb-active-process)
 			      "Continue" "Run") gud-go
 		  :visible (and (eq gud-minor-mode 'gdbmi)

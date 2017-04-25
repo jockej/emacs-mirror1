@@ -1,6 +1,6 @@
 /* Font back-end driver for the NeXT/Open/GNUstep and macOS window system.
    See font.h
-   Copyright (C) 2006-2016 Free Software Foundation, Inc.
+   Copyright (C) 2006-2017 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -855,7 +855,7 @@ nsfont_open (struct frame *f, Lisp_Object font_entity, int pixel_size)
                 ((CFStringRef)@"Monaco", kATSOptionFlagsDefault);
             }
         }
-      font_info->cgfont = CGFontCreateWithPlatformFont ((void*)&atsFont);
+      font_info->cgfont = CGFontCreateWithPlatformFont ((void *) &atsFont);
     }
 #endif
 

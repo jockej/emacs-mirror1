@@ -1,6 +1,6 @@
 /* Buffer manipulation primitives for GNU Emacs.
 
-Copyright (C) 1985-1989, 1993-1995, 1997-2016 Free Software Foundation,
+Copyright (C) 1985-1989, 1993-1995, 1997-2017 Free Software Foundation,
 Inc.
 
 This file is part of GNU Emacs.
@@ -416,19 +416,16 @@ followed by the rest of the buffers.  */)
 }
 
 /* Like Fassoc, but use Fstring_equal to compare
-   (which ignores text properties),
-   and don't ever QUIT.  */
+   (which ignores text properties), and don't ever quit.  */
 
 static Lisp_Object
-assoc_ignore_text_properties (register Lisp_Object key, Lisp_Object list)
+assoc_ignore_text_properties (Lisp_Object key, Lisp_Object list)
 {
-  register Lisp_Object tail;
+  Lisp_Object tail;
   for (tail = list; CONSP (tail); tail = XCDR (tail))
     {
-      register Lisp_Object elt, tem;
-      elt = XCAR (tail);
-      tem = Fstring_equal (Fcar (elt), key);
-      if (!NILP (tem))
+      Lisp_Object elt = XCAR (tail);
+      if (!NILP (Fstring_equal (Fcar (elt), key)))
 	return elt;
     }
   return Qnil;
@@ -846,7 +843,20 @@ CLONE nil means the indirect buffer's state is reset to default values.  */)
   return buf;
 }
 
-/* Delete all overlays of B and reset it's overlay lists.  */
+/* Mark OV as no longer associated with B.  */
+
+/* static void */
+/* drop_overlay (struct buffer *b, struct Lisp_Overlay *ov) */
+/* { */
+/*   eassert (b == XBUFFER (Fmarker_buffer (ov->start))); */
+/*   modify_overlay (b, marker_position (ov->start), */
+/* 		  marker_position (ov->end)); */
+/*   unchain_marker (XMARKER (ov->start)); */
+/*   unchain_marker (XMARKER (ov->end)); */
+
+/* } */
+
+/* Delete all overlays of B and reset its overlay lists.  */
 
 void
 delete_all_overlays (struct buffer *b)
@@ -1653,7 +1663,7 @@ cleaning up all windows currently displaying the buffer to be killed. */)
   if (EQ (buffer, XWINDOW (minibuf_window)->contents))
     return Qnil;
 
-  /* When we kill an ordinary buffer which shares it's buffer text
+  /* When we kill an ordinary buffer which shares its buffer text
      with indirect buffer(s), we must kill indirect buffer(s) too.
      We do it at this stage so nothing terrible happens if they
      ask questions or their hooks get errors.  */

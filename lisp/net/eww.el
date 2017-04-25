@@ -1,6 +1,6 @@
 ;;; eww.el --- Emacs Web Wowser  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2013-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2017 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: html
@@ -59,7 +59,7 @@
   "Directory where files will downloaded."
   :version "24.4"
   :group 'eww
-  :type 'string)
+  :type 'directory)
 
 ;;;###autoload
 (defcustom eww-suggest-uris
@@ -81,7 +81,7 @@ duplicate entries (if any) removed."
   "Directory where bookmark files will be stored."
   :version "25.1"
   :group 'eww
-  :type 'string)
+  :type 'directory)
 
 (defcustom eww-desktop-remove-duplicates t
   "Whether to remove duplicates from the history when saving desktop data.
@@ -251,6 +251,29 @@ word(s) will be searched for via `eww-search-prefix'."
 			  (if uris (format " (default %s)" (car uris)) "")
 			  ": ")))
      (list (read-string prompt nil nil uris))))
+  (setq url (eww--dwim-expand-url url))
+  (pop-to-buffer-same-window
+   (if (eq major-mode 'eww-mode)
+       (current-buffer)
+     (get-buffer-create "*eww*")))
+  (eww-setup-buffer)
+  ;; Check whether the domain only uses "Highly Restricted" Unicode
+  ;; IDNA characters.  If not, transform to punycode to indicate that
+  ;; there may be funny business going on.
+  (let ((parsed (url-generic-parse-url url)))
+    (unless (puny-highly-restrictive-domain-p (url-host parsed))
+      (setf (url-host parsed) (puny-encode-domain (url-host parsed)))
+      (setq url (url-recreate-url parsed))))
+  (plist-put eww-data :url url)
+  (plist-put eww-data :title "")
+  (eww-update-header-line-format)
+  (let ((inhibit-read-only t))
+    (insert (format "Loading %s..." url))
+    (goto-char (point-min)))
+  (url-retrieve url 'eww-render
+		(list url nil (current-buffer))))
+
+(defun eww--dwim-expand-url (url)
   (setq url (string-trim url))
   (cond ((string-match-p "\\`file:/" url))
 	;; Don't mangle file: URLs at all.
@@ -275,26 +298,7 @@ word(s) will be searched for via `eww-search-prefix'."
                  (setq url (concat url "/"))))
            (setq url (concat eww-search-prefix
                              (replace-regexp-in-string " " "+" url))))))
-  (pop-to-buffer-same-window
-   (if (eq major-mode 'eww-mode)
-       (current-buffer)
-     (get-buffer-create "*eww*")))
-  (eww-setup-buffer)
-  ;; Check whether the domain only uses "Highly Restricted" Unicode
-  ;; IDNA characters.  If not, transform to punycode to indicate that
-  ;; there may be funny business going on.
-  (let ((parsed (url-generic-parse-url url)))
-    (unless (puny-highly-restrictive-domain-p (url-host parsed))
-      (setf (url-host parsed) (puny-encode-domain (url-host parsed)))
-      (setq url (url-recreate-url parsed))))
-  (plist-put eww-data :url url)
-  (plist-put eww-data :title "")
-  (eww-update-header-line-format)
-  (let ((inhibit-read-only t))
-    (insert (format "Loading %s..." url))
-    (goto-char (point-min)))
-  (url-retrieve url 'eww-render
-		(list url nil (current-buffer))))
+  url)
 
 ;;;###autoload (defalias 'browse-web 'eww)
 
@@ -351,16 +355,25 @@ Currently this means either text/html or application/xhtml+xml."
 			"utf-8"))))
 	 (data-buffer (current-buffer))
 	 last-coding-system-used)
-    ;; Save the https peer status.
     (with-current-buffer buffer
-      (plist-put eww-data :peer (plist-get status :peer)))
+      ;; Save the https peer status.
+      (plist-put eww-data :peer (plist-get status :peer))
+      ;; Make buffer listings more informative.
+      (setq list-buffers-directory url))
     (unwind-protect
 	(progn
 	  (cond
            ((and eww-use-external-browser-for-content-type
                  (string-match-p eww-use-external-browser-for-content-type
                                  (car content-type)))
-            (eww-browse-with-external-browser url))
+            (erase-buffer)
+            (insert "<title>Unsupported content type</title>")
+            (insert (format "<h1>Content-type %s is unsupported</h1>"
+                            (car content-type)))
+            (insert (format "<a href=%S>Direct link to the document</a>"
+                            url))
+            (goto-char (point-min))
+	    (eww-display-html charset url nil point buffer encode))
 	   ((eww-html-p (car content-type))
 	    (eww-display-html charset url nil point buffer encode))
 	   ((equal (car content-type) "application/pdf")
@@ -501,6 +514,7 @@ Currently this means either text/html or application/xhtml+xml."
              (< eww-redirect-level 5))
     (when-let (refresh (dom-attr dom 'content))
       (when (or (string-match "^\\([0-9]+\\) *;.*url=\"\\([^\"]+\\)\"" refresh)
+                (string-match "^\\([0-9]+\\) *;.*url='\\([^']+\\)'" refresh)
                 (string-match "^\\([0-9]+\\) *;.*url=\\([^ ]+\\)" refresh))
         (let ((timeout (match-string 1 refresh))
               (url (match-string 2 refresh))
@@ -627,8 +641,11 @@ Currently this means either text/html or application/xhtml+xml."
             (when (coding-system-p cs)
               (decode-coding-region (point-min) (point-max) cs)
               (setq buffer-file-coding-system last-coding-system-used))))
-	(when (fboundp 'html-mode)
-	  (html-mode))))
+        (cond
+         ((fboundp 'mhtml-mode)
+          (mhtml-mode))
+         ((fboundp 'html-mode)
+	  (html-mode)))))
     (view-buffer buf)))
 
 (defun eww-toggle-paragraph-direction ()
@@ -804,7 +821,10 @@ the like."
 ;;;###autoload
 (defun eww-browse-url (url &optional new-window)
   (when new-window
-    (pop-to-buffer-same-window (generate-new-buffer "*eww*"))
+    (pop-to-buffer-same-window
+     (generate-new-buffer
+      (format "*eww-%s*" (url-host (url-generic-parse-url
+                                    (eww--dwim-expand-url url))))))
     (eww-mode))
   (eww url))
 
@@ -835,6 +855,8 @@ the like."
       (erase-buffer)
       (insert text)
       (goto-char (plist-get elem :point))
+      ;; Make buffer listings more informative.
+      (setq list-buffers-directory (plist-get elem :url))
       (eww-update-header-line-format))))
 
 (defun eww-next-url ()
@@ -881,8 +903,9 @@ appears in a <link> or <a> tag."
 
 (defun eww-reload (&optional local encode)
   "Reload the current page.
-If LOCAL (the command prefix), don't reload the page from the
-network, but just re-display the HTML already fetched."
+If LOCAL is non-nil (interactively, the command was invoked with
+a prefix argument), don't reload the page from the network, but
+just re-display the HTML already fetched."
   (interactive "P")
   (let ((url (plist-get eww-data :url)))
     (if local
@@ -1117,7 +1140,8 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
               (insert (make-string (abs length) ? ))
 	      (set-text-properties start (point) properties))
 	    (goto-char (1- end)))))
-	(set-text-properties (plist-get form :start) (plist-get form :end)
+	(set-text-properties (cdr (assq :start form))
+                             (cdr (assq :end form))
 			     properties)
 	(let ((value (buffer-substring-no-properties
 		      (eww-beginning-of-field)
@@ -1330,10 +1354,10 @@ See URL `https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Input'.")
       (when (or (get-text-property start 'eww-form)
 		(setq start (next-single-property-change start 'eww-form)))
 	(let ((props (get-text-property start 'eww-form)))
-	  (plist-put props :start start)
-	  (setq start (next-single-property-change
-		       start 'eww-form nil (point-max)))
-	  (plist-put props :end start))))))
+          (nconc props (list (cons :start start)))
+          (setq start (next-single-property-change
+                       start 'eww-form nil (point-max)))
+          (nconc props (list (cons :end start))))))))
 
 (defun eww-input-value (input)
   (let ((type (plist-get input :type))
@@ -1483,6 +1507,7 @@ Differences in #targets are ignored."
 (defun eww-download ()
   "Download URL under point to `eww-download-directory'."
   (interactive)
+  (access-file eww-download-directory "Download failed")
   (let ((url (get-text-property (point) 'shr-url)))
     (if (not url)
         (message "No URL under point")

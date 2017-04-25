@@ -1,6 +1,6 @@
 ;;; css-mode.el --- Major mode to edit CSS files  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2017 Free Software Foundation, Inc.
 
 ;; Author: Stefan Monnier <monnier@iro.umontreal.ca>
 ;; Maintainer: Simen Heggestøyl <simenheg@gmail.com>
@@ -27,26 +27,29 @@
 
 ;;; Todo:
 
-;; - electric ; and }
 ;; - filling code with auto-fill-mode
 ;; - fix font-lock errors with multi-line selectors
 
 ;;; Code:
 
+(require 'eww)
 (require 'seq)
 (require 'sgml-mode)
 (require 'smie)
+(eval-when-compile (require 'subr-x))
 
 (defgroup css nil
   "Cascading Style Sheets (CSS) editing mode."
   :group 'languages)
 
 (defconst css-pseudo-class-ids
-  '("active" "checked" "disabled" "empty" "enabled" "first"
-    "first-child" "first-of-type" "focus" "hover" "indeterminate" "lang"
-    "last-child" "last-of-type" "left" "link" "not" "nth-child"
-    "nth-last-child" "nth-last-of-type" "nth-of-type" "only-child"
-    "only-of-type" "right" "root" "target" "visited")
+  '("active" "checked" "default" "disabled" "empty" "enabled" "first"
+    "first-child" "first-of-type" "focus" "focus-within" "hover"
+    "in-range" "indeterminate" "invalid" "lang" "last-child"
+    "last-of-type" "left" "link" "not" "nth-child" "nth-last-child"
+    "nth-last-of-type" "nth-of-type" "only-child" "only-of-type"
+    "optional" "out-of-range" "read-only" "read-write" "required"
+    "right" "root" "scope" "target" "valid" "visited")
   "Identifiers for pseudo-classes.")
 
 (defconst css-pseudo-element-ids
@@ -120,7 +123,10 @@
      "table-column" "table-cell" "table-caption" "none"
      ;; CSS Flexible Box Layout Module Level 1
      ;; (https://www.w3.org/TR/css3-flexbox/#valdef-display-flex)
-     "flex" "inline-flex")
+     "flex" "inline-flex"
+     ;; CSS Grid Layout Module Level 1
+     ;; (https://www.w3.org/TR/css-grid-1/#grid-containers)
+     "grid" "inline-grid" "subgrid")
     ("elevation" angle "below" "level" "above" "higher" "lower")
     ("empty-cells" "show" "hide")
     ("float" "left" "right" "none")
@@ -268,6 +274,29 @@
     ;; (http://www.w3.org/TR/css3-color/#property)
     ("color" color)
     ("opacity" alphavalue)
+
+    ;; CSS Grid Layout Module Level 1
+    ;; (https://www.w3.org/TR/css-grid-1/#property-index)
+    ("grid" grid-template grid-template-rows "auto-flow" "dense"
+     grid-auto-columns grid-auto-rows grid-template-columns)
+    ("grid-area" grid-line)
+    ("grid-auto-columns" track-size)
+    ("grid-auto-flow" "row" "column" "dense")
+    ("grid-auto-rows" track-size)
+    ("grid-column" grid-line)
+    ("grid-column-end" grid-line)
+    ("grid-column-gap" length-percentage)
+    ("grid-column-start" grid-line)
+    ("grid-gap" grid-row-gap grid-column-gap)
+    ("grid-row" grid-line)
+    ("grid-row-end" grid-line)
+    ("grid-row-gap" length-percentage)
+    ("grid-row-start" grid-line)
+    ("grid-template" "none" grid-template-rows grid-template-columns
+     line-names string track-size line-names explicit-track-list)
+    ("grid-template-areas" "none" string)
+    ("grid-template-columns" "none" track-list auto-track-list)
+    ("grid-template-rows" "none" track-list auto-track-list)
 
     ;; CSS Flexible Box Layout Module Level 1
     ;; (http://www.w3.org/TR/css-flexbox-1/#property-index)
@@ -439,7 +468,11 @@
     ("filter" "none" filter-function-list)
     ("flood-color" color)
     ("flood-opacity" number percentage)
-    ("lighting-color" color))
+    ("lighting-color" color)
+
+    ;; Pointer Events
+    ;; (https://www.w3.org/TR/pointerevents/#the-touch-action-css-property)
+    ("touch-action" "auto" "none" "pan-x" "pan-y" "manipulation"))
   "Identifiers for properties and their possible values.
 The CAR of each entry is the name of a property, while the CDR is
 a list of possible values for that property.  String values in
@@ -462,6 +495,8 @@ further value candidates, since that list would be infinite.")
     (angle "calc()")
     (animateable-feature "scroll-position" "contents" custom-ident)
     (attachment "scroll" "fixed" "local")
+    (auto-repeat "repeat()")
+    (auto-track-list line-names fixed-size fixed-repeat auto-repeat)
     (bg-image image "none")
     (bg-layer bg-image position repeat-style attachment box)
     (bg-size length percentage "auto" "cover" "contain")
@@ -477,6 +512,7 @@ further value candidates, since that list would be infinite.")
     (east-asian-variant-values
      "jis78" "jis83" "jis90" "jis04" "simplified" "traditional")
     (east-asian-width-values "full-width" "proportional-width")
+    (explicit-track-list line-names track-size)
     (family-name "Courier" "Helvetica" "Times")
     (feature-tag-value string integer "on" "off")
     (filter-function
@@ -486,6 +522,9 @@ further value candidates, since that list would be infinite.")
     (filter-function-list filter-function uri)
     (final-bg-layer
      bg-image position repeat-style attachment box color)
+    (fixed-breadth length-percentage)
+    (fixed-repeat "repeat()")
+    (fixed-size fixed-breadth "minmax()")
     (font-variant-css21 "normal" "small-caps")
     (frequency "calc()")
     (generic-family
@@ -494,13 +533,17 @@ further value candidates, since that list would be infinite.")
     (gradient
      linear-gradient radial-gradient repeating-linear-gradient
      repeating-radial-gradient)
+    (grid-line "auto" custom-ident integer "span")
     (historical-lig-values
      "historical-ligatures" "no-historical-ligatures")
     (image uri image-list element-reference gradient)
     (image-list "image()")
+    (inflexible-breadth length-percentage "min-content" "max-content"
+                        "auto")
     (integer "calc()")
     (length "calc()" number)
     (line-height "normal" number length percentage)
+    (line-names custom-ident)
     (line-style
      "none" "hidden" "dotted" "dashed" "solid" "double" "groove"
      "ridge" "inset" "outset")
@@ -569,6 +612,11 @@ further value candidates, since that list would be infinite.")
     (specific-voice identifier)
     (target-name string)
     (time "calc()")
+    (track-breadth length-percentage flex "min-content" "max-content"
+                   "auto")
+    (track-list line-names track-size track-repeat)
+    (track-repeat "repeat()")
+    (track-size track-breadth "minmax()" "fit-content()")
     (transform-list
      "matrix()" "translate()" "translateX()" "translateY()" "scale()"
      "scaleX()" "scaleY()" "rotate()" "skew()" "skewX()" "skewY()"
@@ -587,8 +635,8 @@ other entries in this list, not to properties.
 
 The following classes have been left out above because they
 cannot be completed sensibly: `custom-ident',
-`element-reference', `id', `identifier', `percentage', and
-`string'.")
+`element-reference', `flex', `id', `identifier',
+`length-percentage', `percentage', and `string'.")
 
 (defcustom css-electric-keys '(?\} ?\;) ;; '()
   "Self inserting keys which should trigger re-indentation."
@@ -621,6 +669,12 @@ cannot be completed sensibly: `custom-ident',
     ;; Distinction between words and symbols.
     (modify-syntax-entry ?- "_" st)
     st))
+
+(defvar css-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [remap info-lookup-symbol] 'css-lookup-symbol)
+    map)
+  "Keymap used in `css-mode'.")
 
 (eval-and-compile
   (defconst css--uri-re
@@ -667,6 +721,8 @@ cannot be completed sensibly: `custom-ident',
     ;; Variables.
     (,(concat "--" css-ident-re) (0 font-lock-variable-name-face))
     ;; Selectors.
+    ;; Allow plain ":root" as a selector.
+    ("^[ \t]*\\(:root\\)\\(?:[\n \t]*\\)*{" (1 'css-selector keep))
     ;; FIXME: attribute selectors don't work well because they may contain
     ;; strings which have already been highlighted as f-l-string-face and
     ;; thus prevent this highlighting from being applied (actually now that
@@ -677,7 +733,7 @@ cannot be completed sensibly: `custom-ident',
        (if (not sassy)
            ;; We don't allow / as first char, so as not to
            ;; take a comment as the beginning of a selector.
-           "[^@/:{}() \t\n][^:{}()]+"
+           "[^@/:{}() \t\n][^:{}()]*"
          ;; Same as for non-sassy except we do want to allow { and }
          ;; chars in selectors in the case of #{$foo}
          ;; variable interpolation!
@@ -687,7 +743,8 @@ cannot be completed sensibly: `custom-ident',
        ;; Even though pseudo-elements should be prefixed by ::, a
        ;; single colon is accepted for backward compatibility.
        "\\(?:\\(:" (regexp-opt (append css-pseudo-class-ids
-                                       css-pseudo-element-ids) t)
+                                       css-pseudo-element-ids)
+                               t)
        "\\|\\::" (regexp-opt css-pseudo-element-ids t) "\\)"
        "\\(?:([^)]+)\\)?"
        (if (not sassy)
@@ -733,7 +790,30 @@ cannot be completed sensibly: `custom-ident',
 
 (defconst css-smie-grammar
   (smie-prec2->grammar
-   (smie-precs->prec2 '((assoc ";") (assoc ",") (left ":")))))
+   (smie-precs->prec2
+    '((assoc ";")
+      ;; Colons that belong to a CSS property.  These get a higher
+      ;; precedence than other colons, such as colons in selectors,
+      ;; which are represented by a plain ":" token.
+      (left ":-property")
+      (assoc ",")
+      (assoc ":")))))
+
+(defun css--colon-inside-selector-p ()
+  "Return t if point looks to be inside a CSS selector.
+This function is intended to be good enough to help SMIE during
+tokenization, but should not be regarded as a reliable function
+for determining whether point is within a selector."
+  (save-excursion
+    (re-search-forward "[{};)]" nil t)
+    (eq (char-before) ?\{)))
+
+(defun css--colon-inside-funcall ()
+  "Return t if point is inside a function call."
+  (when-let (opening-paren-pos (nth 1 (syntax-ppss)))
+    (save-excursion
+      (goto-char opening-paren-pos)
+      (eq (char-after) ?\())))
 
 (defun css-smie--forward-token ()
   (cond
@@ -747,7 +827,13 @@ cannot be completed sensibly: `custom-ident',
     ";")
    ((progn (forward-comment (point-max))
            (looking-at "[;,:]"))
-    (forward-char 1) (match-string 0))
+    (forward-char 1)
+    (if (equal (match-string 0) ":")
+        (if (or (css--colon-inside-selector-p)
+                (css--colon-inside-funcall))
+            ":"
+          ":-property")
+      (match-string 0)))
    (t (smie-default-forward-token))))
 
 (defun css-smie--backward-token ()
@@ -758,7 +844,13 @@ cannot be completed sensibly: `custom-ident',
      ((and (eq (char-before) ?\}) (scss-smie--not-interpolation-p)
            (> pos (point))) ";")
      ((memq (char-before) '(?\; ?\, ?\:))
-      (forward-char -1) (string (char-after)))
+      (forward-char -1)
+      (if (eq (char-after) ?\:)
+          (if (or (css--colon-inside-selector-p)
+                  (css--colon-inside-funcall))
+              ":"
+            ":-property")
+        (string (char-after))))
      (t (smie-default-backward-token)))))
 
 (defun css-smie-rules (kind token)
@@ -921,10 +1013,22 @@ pseudo-elements, pseudo-classes, at-rules, and bang-rules."
       (seq-let (prop-beg prop-end prop-table) (css--complete-property)
         (seq-let (sel-beg sel-end sel-table) (css--complete-selector)
           (when (or prop-table sel-table)
+            ;; FIXME: If both prop-table and sel-table are set but
+            ;; prop-beg/prop-end is different from sel-beg/sel-end
+            ;; we have a problem!
             `(,@(if prop-table
                     (list prop-beg prop-end)
                   (list sel-beg sel-end))
-              ,(completion-table-merge prop-table sel-table)))))))
+              ,(completion-table-merge prop-table sel-table)
+              :exit-function
+              ,(lambda (string status)
+                 (and (eq status 'finished)
+                      prop-table
+                      (test-completion string prop-table)
+                      (not (and sel-table
+                                (test-completion string sel-table)))
+                      (progn (insert ": ;")
+                             (forward-char -1))))))))))
 
 ;;;###autoload
 (define-derived-mode css-mode prog-mode "CSS"
@@ -1085,6 +1189,115 @@ pseudo-elements, pseudo-classes, at-rules, and bang-rules."
   (setq-local css--nested-selectors-allowed t)
   (setq-local font-lock-defaults
               (list (scss-font-lock-keywords) nil t)))
+
+
+
+(defvar css--mdn-lookup-history nil)
+
+(defcustom css-lookup-url-format
+  "https://developer.mozilla.org/en-US/docs/Web/CSS/%s?raw&macros"
+  "Format for a URL where CSS documentation can be found.
+The format should include a single \"%s\" substitution.
+The name of the CSS property, @-id, pseudo-class, or pseudo-element
+to look up will be substituted there."
+  :version "26.1"
+  :type 'string
+  :group 'css)
+
+(defun css--mdn-after-render ()
+  (setf header-line-format nil)
+  (goto-char (point-min))
+  (let ((window (get-buffer-window (current-buffer) 'visible)))
+    (when window
+      (when (re-search-forward "^Summary" nil 'move)
+        (beginning-of-line)
+        (set-window-start window (point))))))
+
+(defconst css--mdn-symbol-regexp
+  (concat "\\("
+	  ;; @-ids.
+	  "\\(@" (regexp-opt css-at-ids) "\\)"
+	  "\\|"
+	  ;; ;; Known properties.
+	  (regexp-opt css-property-ids t)
+	  "\\|"
+	  ;; Pseudo-classes.
+	  "\\(:" (regexp-opt css-pseudo-class-ids) "\\)"
+	  "\\|"
+	  ;; Pseudo-elements with either one or two ":"s.
+	  "\\(::?" (regexp-opt css-pseudo-element-ids) "\\)"
+	  "\\)")
+  "Regular expression to match the CSS symbol at point.")
+
+(defconst css--mdn-property-regexp
+  (concat "\\_<" (regexp-opt css-property-ids t) "\\s-*\\(?:\\=\\|:\\)")
+  "Regular expression to match a CSS property.")
+
+(defconst css--mdn-completion-list
+  (nconc
+   ;; @-ids.
+   (mapcar (lambda (atrule) (concat "@" atrule)) css-at-ids)
+   ;; Pseudo-classes.
+   (mapcar (lambda (class) (concat ":" class)) css-pseudo-class-ids)
+   ;; Pseudo-elements with either one or two ":"s.
+   (mapcar (lambda (elt) (concat ":" elt)) css-pseudo-element-ids)
+   (mapcar (lambda (elt) (concat "::" elt)) css-pseudo-element-ids)
+   ;; Properties.
+   css-property-ids)
+  "List of all symbols available for lookup via MDN.")
+
+(defun css--mdn-find-symbol ()
+  "A helper for `css-lookup-symbol' that finds the symbol at point.
+Returns the symbol, a string, or nil if none found."
+  (save-excursion
+    ;; Skip any whitespace between the word and point.
+    (skip-chars-backward "- \t")
+    ;; Skip backward over a word.
+    (skip-chars-backward "-[:alnum:]")
+    ;; Now skip ":" or "@" to see if it's a pseudo-element or at-id.
+    (skip-chars-backward "@:")
+    (if (looking-at css--mdn-symbol-regexp)
+	(match-string-no-properties 0)
+      (let ((bound (save-excursion
+		     (beginning-of-line)
+		     (point))))
+	(when (re-search-backward css--mdn-property-regexp bound t)
+	  (match-string-no-properties 1))))))
+
+;;;###autoload
+(defun css-lookup-symbol (symbol)
+  "Display the CSS documentation for SYMBOL, as found on MDN.
+When this command is used interactively, it picks a default
+symbol based on the CSS text before point -- either an @-keyword,
+a property name, a pseudo-class, or a pseudo-element, depending
+on what is seen near point."
+  (interactive
+   (list
+    (let* ((sym (css--mdn-find-symbol))
+	   (enable-recursive-minibuffers t)
+	   (value (completing-read
+		   (if sym
+		       (format "Describe CSS symbol (default %s): " sym)
+		     "Describe CSS symbol: ")
+		   css--mdn-completion-list nil nil nil
+		   'css--mdn-lookup-history sym)))
+      (if (equal value "") sym value))))
+  (when symbol
+    ;; If we see a single-colon pseudo-element like ":after", turn it
+    ;; into "::after".
+    (when (and (eq (aref symbol 0) ?:)
+	       (member (substring symbol 1) css-pseudo-element-ids))
+      (setq symbol (concat ":" symbol)))
+    (let ((url (format css-lookup-url-format symbol))
+          (buffer (get-buffer-create "*MDN CSS*")))
+      (save-selected-window
+        ;; Make sure to display the buffer before calling `eww', as
+        ;; that calls `pop-to-buffer-same-window'.
+        (switch-to-buffer-other-window buffer)
+        (with-current-buffer buffer
+          (eww-mode)
+          (add-hook 'eww-after-render-hook #'css--mdn-after-render nil t)
+          (eww url))))))
 
 (provide 'css-mode)
 ;;; css-mode.el ends here

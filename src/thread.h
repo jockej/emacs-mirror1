@@ -1,5 +1,5 @@
 /* Thread definitions
-Copyright (C) 2012-2016 Free Software Foundation, Inc.
+Copyright (C) 2012-2017 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -285,7 +285,7 @@ extern void maybe_reacquire_global_lock (void);
 extern void init_threads_once (void);
 extern void init_threads (void);
 extern void syms_of_threads (void);
-extern bool primary_thread_p (void *);
+extern bool main_thread_p (void *);
 
 typedef int select_func (int, fd_set *, fd_set *, fd_set *,
 			 const struct timespec *, const sigset_t *);

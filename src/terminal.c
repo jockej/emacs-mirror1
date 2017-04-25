@@ -1,5 +1,5 @@
 /* Functions related to terminal devices.
-   Copyright (C) 2005-2016 Free Software Foundation, Inc.
+   Copyright (C) 2005-2017 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -575,7 +575,10 @@ Lisp_Object
 terminal_glyph_code (struct terminal *t, int ch)
 {
 #if HAVE_STRUCT_UNIPAIR_UNICODE
-  if (t->type == output_termcap)
+  /* Heuristically assume that a terminal supporting glyph codes is in
+     UTF-8 mode if and only if its coding system is UTF-8 (Bug#26396).  */
+  if (t->type == output_termcap
+      && t->terminal_coding->encoder == encode_coding_utf_8)
     {
       /* As a hack, recompute the table when CH is the maximum
 	 character.  */

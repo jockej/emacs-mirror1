@@ -1,6 +1,6 @@
 ;;; eieio-datadebug.el --- EIEIO extensions to the data debugger.  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2007-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2017 Free Software Foundation, Inc.
 
 ;; Author: Eric M. Ludlam <zappo@gnu.org>
 ;; Keywords: OO, lisp
@@ -59,7 +59,7 @@ PREFIX is the text that precedes the button.
 PREBUTTONTEXT is some text between PREFIX and the object button."
   (let* ((start (point))
          (end nil)
-         (str (object-print object))
+         (str (cl-prin1-to-string object))
          (class (eieio-object-class object))
          (tip (format "Object %s\nClass: %S\nParent(s): %S\n%d slots"
                       (eieio-object-name-string object)

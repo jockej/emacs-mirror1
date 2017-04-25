@@ -1,5 +1,5 @@
 /* GnuTLS glue for GNU Emacs.
-   Copyright (C) 2010-2016 Free Software Foundation, Inc.
+   Copyright (C) 2010-2017 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -142,7 +142,7 @@ DEF_DLL_FN (int, gnutls_x509_crt_get_dn,
 	    (gnutls_x509_crt_t, char *, size_t *));
 DEF_DLL_FN (int, gnutls_x509_crt_get_pk_algorithm,
 	    (gnutls_x509_crt_t, unsigned int *));
-DEF_DLL_FN (const char*, gnutls_pk_algorithm_get_name,
+DEF_DLL_FN (const char *, gnutls_pk_algorithm_get_name,
 	    (gnutls_pk_algorithm_t));
 DEF_DLL_FN (int, gnutls_pk_bits_to_sec_param,
 	    (gnutls_pk_algorithm_t, unsigned int));
@@ -154,22 +154,22 @@ DEF_DLL_FN (int, gnutls_x509_crt_get_signature_algorithm,
 	    (gnutls_x509_crt_t));
 DEF_DLL_FN (int, gnutls_x509_crt_get_key_id,
 	    (gnutls_x509_crt_t, unsigned int, unsigned char *, size_t *_size));
-DEF_DLL_FN (const char*, gnutls_sec_param_get_name, (gnutls_sec_param_t));
-DEF_DLL_FN (const char*, gnutls_sign_get_name, (gnutls_sign_algorithm_t));
+DEF_DLL_FN (const char *, gnutls_sec_param_get_name, (gnutls_sec_param_t));
+DEF_DLL_FN (const char *, gnutls_sign_get_name, (gnutls_sign_algorithm_t));
 DEF_DLL_FN (int, gnutls_server_name_set,
 	    (gnutls_session_t, gnutls_server_name_type_t,
 	     const void *, size_t));
 DEF_DLL_FN (gnutls_kx_algorithm_t, gnutls_kx_get, (gnutls_session_t));
-DEF_DLL_FN (const char*, gnutls_kx_get_name, (gnutls_kx_algorithm_t));
+DEF_DLL_FN (const char *, gnutls_kx_get_name, (gnutls_kx_algorithm_t));
 DEF_DLL_FN (gnutls_protocol_t, gnutls_protocol_get_version,
 	    (gnutls_session_t));
-DEF_DLL_FN (const char*, gnutls_protocol_get_name, (gnutls_protocol_t));
+DEF_DLL_FN (const char *, gnutls_protocol_get_name, (gnutls_protocol_t));
 DEF_DLL_FN (gnutls_cipher_algorithm_t, gnutls_cipher_get,
 	    (gnutls_session_t));
-DEF_DLL_FN (const char*, gnutls_cipher_get_name,
+DEF_DLL_FN (const char *, gnutls_cipher_get_name,
 	    (gnutls_cipher_algorithm_t));
 DEF_DLL_FN (gnutls_mac_algorithm_t, gnutls_mac_get, (gnutls_session_t));
-DEF_DLL_FN (const char*, gnutls_mac_get_name, (gnutls_mac_algorithm_t));
+DEF_DLL_FN (const char *, gnutls_mac_get_name, (gnutls_mac_algorithm_t));
 
 
 static bool
@@ -390,7 +390,7 @@ gnutls_try_handshake (struct Lisp_Process *proc)
     {
       ret = gnutls_handshake (state);
       emacs_gnutls_handle_error (state, ret);
-      QUIT;
+      maybe_quit ();
     }
   while (ret < 0
 	 && gnutls_error_is_fatal (ret) == 0
@@ -582,8 +582,17 @@ emacs_gnutls_handle_error (gnutls_session_t session, int err)
 
   if (gnutls_error_is_fatal (err))
     {
+      int level = 1;
+      /* Mostly ignore "The TLS connection was non-properly
+	 terminated" message which just means that the peer closed the
+	 connection.  */
+#ifdef HAVE_GNUTLS3
+      if (err == GNUTLS_E_PREMATURE_TERMINATION)
+	level = 3;
+#endif
+
+      GNUTLS_LOG2 (level, max_log_level, "fatal error:", str);
       ret = 0;
-      GNUTLS_LOG2 (1, max_log_level, "fatal error:", str);
     }
   else
     {

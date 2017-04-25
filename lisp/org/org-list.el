@@ -1,6 +1,6 @@
 ;;; org-list.el --- Plain lists for Org-mode
 ;;
-;; Copyright (C) 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2004-2017 Free Software Foundation, Inc.
 ;;
 ;; Author: Carsten Dominik <carsten at orgmode dot org>
 ;;	   Bastien Guerry <bzg@gnu.org>
@@ -3035,7 +3035,7 @@ Point is left at list end."
 (defun org-list-insert-radio-list ()
   "Insert a radio list template appropriate for this major mode."
   (interactive)
-  (let* ((e (assq major-mode org-list-radio-list-templates))
+  (let* ((e (cl-assoc-if #'derived-mode-p org-list-radio-list-templates))
 	 (txt (nth 1 e))
 	 name pos)
     (unless e (error "No radio list setup defined for %s" major-mode))

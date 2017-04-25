@@ -1,6 +1,6 @@
 ;;; rmailsum.el --- make summary buffers for the mail reader  -*- lexical-binding:t -*-
 
-;; Copyright (C) 1985, 1993-1996, 2000-2016 Free Software Foundation,
+;; Copyright (C) 1985, 1993-1996, 2000-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -753,14 +753,7 @@ the message being processed."
 			    (concat "^\\("
 				    (regexp-quote (user-login-name))
 				    "\\($\\|@\\)\\|"
-				    (regexp-quote
-				     ;; Don't lose if run from init file
-				     ;; where user-mail-address is not
-				     ;; set yet.
-				     (or user-mail-address
-					 (concat (user-login-name) "@"
-						 (or mail-host-address
-						     (system-name)))))
+				    (regexp-quote user-mail-address)
 				    "\\>\\)"))
 			from))
 		   ;; No From field, or it's this user.

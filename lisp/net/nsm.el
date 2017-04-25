@@ -1,6 +1,6 @@
 ;;; nsm.el --- Network Security Manager
 
-;; Copyright (C) 2014-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2014-2017 Free Software Foundation, Inc.
 
 ;; Author: Lars Magne Ingebrigtsen <larsi@gnus.org>
 ;; Keywords: encryption, security, network
@@ -25,7 +25,7 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'subr-x)
+(require 'subr-x)                       ; read-multiple-choice
 
 (defvar nsm-permanent-host-settings nil)
 (defvar nsm-temporary-host-settings nil)

@@ -1,6 +1,6 @@
 ;;; generator.el --- generators  -*- lexical-binding: t -*-
 
-;;; Copyright (C) 2015-2016 Free Software Foundation, Inc.
+;;; Copyright (C) 2015-2017 Free Software Foundation, Inc.
 
 ;; Author: Daniel Colascione <dancol@dancol.org>
 ;; Keywords: extensions, elisp
@@ -77,7 +77,6 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'pcase)
 
 (defvar cps--bindings nil)
 (defvar cps--states nil)

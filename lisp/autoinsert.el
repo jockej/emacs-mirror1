@@ -1,6 +1,6 @@
 ;;; autoinsert.el --- automatic mode-dependent insertion of text into new files
 
-;; Copyright (C) 1985-1987, 1994-1995, 1998, 2000-2016 Free Software
+;; Copyright (C) 1985-1987, 1994-1995, 1998, 2000-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Charlie Martin <crm@cs.duke.edu>
@@ -348,7 +348,7 @@ Matches the visited file name against the elements of `auto-insert-alist'."
 	     (setq desc (cdr cond)
 		   cond (car cond)))
 	   (if (if (symbolp cond)
-		   (eq cond major-mode)
+                   (derived-mode-p cond)
 		 (and buffer-file-name
 		      (string-match cond buffer-file-name)))
 	       (setq action (cdr (car alist))

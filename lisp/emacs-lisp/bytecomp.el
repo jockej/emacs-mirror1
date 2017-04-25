@@ -1,6 +1,6 @@
 ;;; bytecomp.el --- compilation of Lisp code into byte code -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1992, 1994, 1998, 2000-2016 Free Software
+;; Copyright (C) 1985-1987, 1992, 1994, 1998, 2000-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Author: Jamie Zawinski <jwz@lucid.com>
@@ -124,11 +124,13 @@
 (require 'backquote)
 (require 'macroexp)
 (require 'cconv)
+(require 'cl-lib)
 
 ;; During bootstrap, cl-loaddefs.el is not created yet, so loading cl-lib
 ;; doesn't setup autoloads for things like cl-every, which is why we have to
-;; require cl-extra instead (bug#18804).
-(require 'cl-extra)
+;; require cl-extra as well (bug#18804).
+(or (fboundp 'cl-every)
+    (require 'cl-extra))
 
 (or (fboundp 'defsubst)
     ;; This really ought to be loaded already!
@@ -220,6 +222,11 @@ Possible values are:
 (defcustom byte-compile-delete-errors nil
   "If non-nil, the optimizer may delete forms that may signal an error.
 This includes variable references and calls to functions such as `car'."
+  :group 'bytecomp
+  :type 'boolean)
+
+(defcustom byte-compile-cond-use-jump-table t
+  "Compile `cond' clauses to a jump table implementation (using a hash-table)."
   :group 'bytecomp
   :type 'boolean)
 
@@ -411,7 +418,10 @@ specify different fields to sort on."
   :type '(choice (const name) (const callers) (const calls)
 		 (const calls+callers) (const nil)))
 
-(defvar byte-compile-debug nil)
+(defvar byte-compile-debug nil
+  "If non-nil, byte compile errors will be raised as signals instead of logged.")
+(defvar byte-compile-jump-tables nil
+  "List of all jump tables used during compilation of this form.")
 (defvar byte-compile-constants nil
   "List of all constants encountered during compilation of this form.")
 (defvar byte-compile-variables nil
@@ -435,7 +445,7 @@ Return the compile-time value of FORM."
   ;; Macroexpand (not macroexpand-all!) form at toplevel in case it
   ;; expands into a toplevel-equivalent `progn'.  See CLHS section
   ;; 3.2.3.1, "Processing of Top Level Forms".  The semantics are very
-  ;; subtle: see test/automated/bytecomp-tests.el for interesting
+  ;; subtle: see test/lisp/emacs-lisp/bytecomp-tests.el for interesting
   ;; cases.
   (setf form (macroexp-macroexpand form byte-compile-macro-environment))
   (if (eq (car-safe form) 'progn)
@@ -747,6 +757,10 @@ otherwise pop it")
 ;; `byte-compile-lapcode').
 (defconst byte-discardN-preserve-tos byte-discardN)
 
+(byte-defop 183 -2 byte-switch
+ "to take a hash table and a value from the stack, and jump to the address
+the value maps to, if any.")
+
 ;; unused: 182-191
 
 (byte-defop 192  1 byte-constant	"for reference to a constant")
@@ -823,7 +837,7 @@ CONST2 may be evaluated multiple times."
 	op off			; Operation & offset
 	opcode			; numeric value of OP
 	(bytes '())		; Put the output bytes here
-	(patchlist nil))	; List of gotos to patch
+	(patchlist nil))        ; List of gotos to patch
     (dolist (lap-entry lap)
       (setq op (car lap-entry)
 	    off (cdr lap-entry))
@@ -900,11 +914,22 @@ CONST2 may be evaluated multiple times."
     ;; Patch tag PCs into absolute jumps.
     (dolist (bytes-tail patchlist)
       (setq pc (caar bytes-tail))	; Pick PC from goto's tag.
+      ;; Splits PC's value into 2 bytes. The jump address is
+      ;; "reconstructed" by the `FETCH2' macro in `bytecode.c'.
       (setcar (cdr bytes-tail) (logand pc 255))
       (setcar bytes-tail (lsh pc -8))
       ;; FIXME: Replace this by some workaround.
       (if (> (car bytes-tail) 255) (error "Bytecode overflow")))
 
+    ;; Similarly, replace TAGs in all jump tables with the correct PC index.
+    (dolist (hash-table byte-compile-jump-tables)
+      (maphash #'(lambda (value tag)
+                   (setq pc (cadr tag))
+                   ;; We don't need to split PC here, as it is stored as a lisp
+                   ;; object in the hash table (whereas other goto-* ops store
+                   ;; it within 2 bytes in the byte string).
+                   (puthash value pc hash-table))
+               hash-table))
     (apply 'unibyte-string (nreverse bytes))))
 
 
@@ -1954,7 +1979,8 @@ With argument ARG, insert value in current buffer after the form."
 ;; 	(edebug-all-defs nil)
 ;; 	(edebug-all-forms nil)
 	;; Simulate entry to byte-compile-top-level
-	(byte-compile-constants nil)
+        (byte-compile-jump-tables nil)
+        (byte-compile-constants nil)
 	(byte-compile-variables nil)
 	(byte-compile-tag-number 0)
 	(byte-compile-depth 0)
@@ -1995,7 +2021,7 @@ With argument ARG, insert value in current buffer after the form."
 	;; Compile the forms from the input buffer.
 	(while (progn
 		 (while (progn (skip-chars-forward " \t\n\^l")
-			       (looking-at ";"))
+			       (= (following-char) ?\;))
 		   (forward-line 1))
 		 (not (eobp)))
 	  (setq byte-compile-read-position (point)
@@ -2250,7 +2276,8 @@ list that represents a doc string reference.
 	      byte-compile-variables nil
 	      byte-compile-depth 0
 	      byte-compile-maxdepth 0
-	      byte-compile-output nil))))
+	      byte-compile-output nil
+              byte-compile-jump-tables nil))))
 
 (defvar byte-compile-force-lexical-warnings nil)
 
@@ -2862,7 +2889,8 @@ for symbols generated by the byte compiler itself."
 	(byte-compile-maxdepth 0)
         (byte-compile--lexical-environment lexenv)
         (byte-compile-reserved-constants (or reserved-csts 0))
-	(byte-compile-output nil))
+	(byte-compile-output nil)
+        (byte-compile-jump-tables nil))
     (if (memq byte-optimize '(t source))
 	(setq form (byte-optimize-form form byte-compile--for-effect)))
     (while (and (eq (car-safe form) 'progn) (null (cdr (cdr form))))
@@ -3114,15 +3142,57 @@ for symbols generated by the byte compiler itself."
   ;; happens to be true for byte-code generated by bytecomp.el without
   ;; lexical-binding, but it's not true in general, and it's not true for
   ;; code output by bytecomp.el with lexical-binding.
-  (let ((endtag (byte-compile-make-tag)))
+  ;; We also restore the value of `byte-compile-depth' and remove TAG depths
+  ;; accordingly when inlining lapcode containing lap-code, exactly as
+  ;; documented in `byte-compile-cond-jump-table'.
+  (let ((endtag (byte-compile-make-tag))
+        last-jump-tag ;; last TAG we have jumped to
+        last-depth ;; last value of `byte-compile-depth'
+        last-constant ;; value of the last constant encountered
+        last-switch ;; whether the last op encountered was byte-switch
+        switch-tags ;; a list of tags that byte-switch could jump to
+        ;; a list of tags byte-switch will jump to, if the value doesn't
+        ;; match any entry in the hash table
+        switch-default-tags)
     (dolist (op lap)
       (cond
-       ((eq (car op) 'TAG) (byte-compile-out-tag op))
-       ((memq (car op) byte-goto-ops) (byte-compile-goto (car op) (cdr op)))
+       ((eq (car op) 'TAG)
+        (when (or (member op switch-tags) (member op switch-default-tags))
+          ;; This TAG is used in a jump table, this means the last goto
+          ;; was to a done/default TAG, and thus it's cddr should be set to nil.
+          (when last-jump-tag
+            (setcdr (cdr last-jump-tag) nil))
+          ;; Also, restore the value of `byte-compile-depth' to what it was
+          ;; before the last goto.
+          (setq byte-compile-depth last-depth
+                last-jump-tag nil))
+        (byte-compile-out-tag op))
+       ((memq (car op) byte-goto-ops)
+        (setq last-depth byte-compile-depth
+              last-jump-tag (cdr op))
+        (byte-compile-goto (car op) (cdr op))
+        (when last-switch
+          ;; The last op was byte-switch, this goto jumps to a "default" TAG
+          ;; (when no value in the jump table is satisfied).
+          (push (cdr op) switch-default-tags)
+          (setcdr (cdr (cdr op)) nil)
+          (setq byte-compile-depth last-depth
+                last-switch nil)))
        ((eq (car op) 'byte-return)
         (byte-compile-discard (- byte-compile-depth end-depth) t)
         (byte-compile-goto 'byte-goto endtag))
-       (t (byte-compile-out (car op) (cdr op)))))
+       (t
+        (when (eq (car op) 'byte-switch)
+          ;; The last constant is a jump table.
+          (push last-constant byte-compile-jump-tables)
+          (setq last-switch t)
+          ;; Push all TAGs in the jump to switch-tags.
+          (maphash #'(lambda (_k tag)
+                       (push tag switch-tags))
+                   last-constant))
+        (setq last-constant (and (eq (car op) 'byte-constant) (cadr op)))
+        (setq last-depth byte-compile-depth)
+        (byte-compile-out (car op) (cdr op)))))
     (byte-compile-out-tag endtag)))
 
 (defun byte-compile-unfold-bcf (form)
@@ -3134,47 +3204,53 @@ for symbols generated by the byte compiler itself."
          (fmax2 (if (numberp fargs) (lsh fargs -7)))     ;2*max+rest.
          ;; (fmin (if (numberp fargs) (logand fargs 127)))
          (alen (length (cdr form)))
-         (dynbinds ()))
+         (dynbinds ())
+         lap)
     (fetch-bytecode fun)
-    (mapc 'byte-compile-form (cdr form))
-    (unless fmax2
-      ;; Old-style byte-code.
-      (cl-assert (listp fargs))
-      (while fargs
-        (pcase (car fargs)
-          (`&optional (setq fargs (cdr fargs)))
-          (`&rest (setq fmax2 (+ (* 2 (length dynbinds)) 1))
-                 (push (cadr fargs) dynbinds)
-                 (setq fargs nil))
-          (_ (push (pop fargs) dynbinds))))
-      (unless fmax2 (setq fmax2 (* 2 (length dynbinds)))))
-    (cond
-     ((<= (+ alen alen) fmax2)
-      ;; Add missing &optional (or &rest) arguments.
-      (dotimes (_ (- (/ (1+ fmax2) 2) alen))
-        (byte-compile-push-constant nil)))
-     ((zerop (logand fmax2 1))
-      (byte-compile-report-error
-       (format "Too many arguments for inlined function %S" form))
-      (byte-compile-discard (- alen (/ fmax2 2))))
-     (t
-      ;; Turn &rest args into a list.
-      (let ((n (- alen (/ (1- fmax2) 2))))
-        (cl-assert (> n 0) nil "problem: fmax2=%S alen=%S n=%S" fmax2 alen n)
-        (if (< n 5)
-            (byte-compile-out
-             (aref [byte-list1 byte-list2 byte-list3 byte-list4] (1- n))
-             0)
-          (byte-compile-out 'byte-listN n)))))
-    (mapc #'byte-compile-dynamic-variable-bind dynbinds)
-    (byte-compile-inline-lapcode
-     (byte-decompile-bytecode-1 (aref fun 1) (aref fun 2) t)
-     (1+ start-depth))
-    ;; Unbind dynamic variables.
-    (when dynbinds
-      (byte-compile-out 'byte-unbind (length dynbinds)))
-    (cl-assert (eq byte-compile-depth (1+ start-depth))
-            nil "Wrong depth start=%s end=%s" start-depth byte-compile-depth)))
+    (setq lap (byte-decompile-bytecode-1 (aref fun 1) (aref fun 2) t))
+    ;; optimized switch bytecode makes it impossible to guess the correct
+    ;; `byte-compile-depth', which can result in incorrect inlined code.
+    ;; therefore, we do not inline code that uses the `byte-switch'
+    ;; instruction.
+    (if (assq 'byte-switch lap)
+        (byte-compile-normal-call form)
+      (mapc 'byte-compile-form (cdr form))
+      (unless fmax2
+        ;; Old-style byte-code.
+        (cl-assert (listp fargs))
+        (while fargs
+          (pcase (car fargs)
+            (`&optional (setq fargs (cdr fargs)))
+            (`&rest (setq fmax2 (+ (* 2 (length dynbinds)) 1))
+                    (push (cadr fargs) dynbinds)
+                    (setq fargs nil))
+            (_ (push (pop fargs) dynbinds))))
+        (unless fmax2 (setq fmax2 (* 2 (length dynbinds)))))
+      (cond
+       ((<= (+ alen alen) fmax2)
+        ;; Add missing &optional (or &rest) arguments.
+        (dotimes (_ (- (/ (1+ fmax2) 2) alen))
+          (byte-compile-push-constant nil)))
+       ((zerop (logand fmax2 1))
+        (byte-compile-report-error
+         (format "Too many arguments for inlined function %S" form))
+        (byte-compile-discard (- alen (/ fmax2 2))))
+       (t
+        ;; Turn &rest args into a list.
+        (let ((n (- alen (/ (1- fmax2) 2))))
+          (cl-assert (> n 0) nil "problem: fmax2=%S alen=%S n=%S" fmax2 alen n)
+          (if (< n 5)
+              (byte-compile-out
+               (aref [byte-list1 byte-list2 byte-list3 byte-list4] (1- n))
+               0)
+            (byte-compile-out 'byte-listN n)))))
+      (mapc #'byte-compile-dynamic-variable-bind dynbinds)
+      (byte-compile-inline-lapcode lap (1+ start-depth))
+      ;; Unbind dynamic variables.
+      (when dynbinds
+        (byte-compile-out 'byte-unbind (length dynbinds)))
+      (cl-assert (eq byte-compile-depth (1+ start-depth))
+                 nil "Wrong depth start=%s end=%s" start-depth byte-compile-depth))))
 
 (defun byte-compile-check-variable (var access-type)
   "Do various error checks before a use of the variable VAR."
@@ -3951,37 +4027,164 @@ that suppresses all warnings during execution of BODY."
 	(byte-compile-out-tag donetag))))
   (setq byte-compile--for-effect nil))
 
+(defun byte-compile-cond-vars (obj1 obj2)
+  ;; We make sure that of OBJ1 and OBJ2, one of them is a symbol,
+  ;; and the other is a constant expression whose value can be
+  ;; compared with `eq' (with `macroexp-const-p').
+  (or
+   (and (symbolp obj1) (macroexp-const-p obj2) (cons obj1 obj2))
+   (and (symbolp obj2) (macroexp-const-p obj1) (cons obj2 obj1))))
+
+(defun byte-compile-cond-jump-table-info (clauses)
+  "If CLAUSES is a `cond' form where:
+The condition for each clause is of the form (TEST VAR VALUE).
+VAR is a variable.
+TEST and VAR are the same throughout all conditions.
+VALUE satisfies `macroexp-const-p'.
+
+Return a list of the form ((TEST . VAR)  ((VALUE BODY) ...))"
+  (let ((cases '())
+        (ok t)
+        prev-var prev-test)
+    (and (catch 'break
+           (dolist (clause (cdr clauses) ok)
+             (let* ((condition (car clause))
+                    (test (car-safe condition))
+                    (vars (when (consp condition)
+                            (byte-compile-cond-vars (cadr condition) (cl-caddr condition))))
+                    (obj1 (car-safe vars))
+                    (obj2 (cdr-safe vars))
+                    (body (cdr-safe clause)))
+               (unless prev-var
+                 (setq prev-var obj1))
+               (unless prev-test
+                 (setq prev-test test))
+               (if (and obj1 (memq test '(eq eql equal))
+                        (consp condition)
+                        (eq test prev-test)
+                        (eq obj1 prev-var)
+                        ;; discard duplicate clauses
+                        (not (assq obj2 cases)))
+                   (push (list (if (consp obj2) (eval obj2) obj2) body) cases)
+                 (if (and (macroexp-const-p condition) condition)
+                     (progn (push (list 'default (or body `(,condition))) cases)
+                            (throw 'break t))
+                   (setq ok nil)
+                   (throw 'break nil))))))
+         (list (cons prev-test prev-var) (nreverse cases)))))
+
+(defun byte-compile-cond-jump-table (clauses)
+  (let* ((table-info (byte-compile-cond-jump-table-info clauses))
+         (test (caar table-info))
+         (var (cdar table-info))
+         (cases (cadr table-info))
+         jump-table test-obj body tag donetag default-tag default-case)
+    (when (and cases (not (= (length cases) 1)))
+      ;; TODO: Once :linear-search is implemented for `make-hash-table'
+      ;; set it to `t' for cond forms with a small number of cases.
+      (setq jump-table (make-hash-table :test test
+                                        :purecopy t
+                                        :size (if (assq 'default cases)
+                                                  (1- (length cases))
+                                                (length cases)))
+            default-tag (byte-compile-make-tag)
+            donetag (byte-compile-make-tag))
+      ;; The structure of byte-switch code:
+      ;;
+      ;; varref var
+      ;; constant #s(hash-table purecopy t data (val1 (TAG1) val2 (TAG2)))
+      ;; switch
+      ;; goto DEFAULT-TAG
+      ;; TAG1
+      ;; <clause body>
+      ;; goto DONETAG
+      ;; TAG2
+      ;; <clause body>
+      ;; goto DONETAG
+      ;; DEFAULT-TAG
+      ;; <body for `t' clause, if any (else `constant nil')>
+      ;; DONETAG
+
+      (byte-compile-variable-ref var)
+      (byte-compile-push-constant jump-table)
+      (byte-compile-out 'byte-switch)
+
+      ;; When the opcode argument is `byte-goto', `byte-compile-goto' sets
+      ;; `byte-compile-depth' to `nil'. However, we need `byte-compile-depth'
+      ;; to be non-nil for generating tags for all cases. Since
+      ;; `byte-compile-depth' will increase by at most 1 after compiling
+      ;; all of the clause (which is further enforced by cl-assert below)
+      ;; it should be safe to preserve it's value.
+      (let ((byte-compile-depth byte-compile-depth))
+        (byte-compile-goto 'byte-goto default-tag))
+
+      (when (assq 'default cases)
+        (setq default-case (cadr (assq 'default cases))
+              cases (butlast cases 1)))
+
+      (dolist (case cases)
+        (setq tag (byte-compile-make-tag)
+              test-obj (nth 0 case)
+              body (nth 1 case))
+        (byte-compile-out-tag tag)
+        (puthash test-obj tag jump-table)
+
+        (let ((byte-compile-depth byte-compile-depth)
+              (init-depth byte-compile-depth))
+          ;; Since `byte-compile-body' might increase `byte-compile-depth'
+          ;; by 1, not preserving it's value will cause it to potentially
+          ;; increase by one for every clause body compiled, causing
+          ;; depth/tag conflicts or violating asserts down the road.
+          ;; To make sure `byte-compile-body' itself doesn't violate this,
+          ;; we use `cl-assert'.
+          (if (null body)
+              (byte-compile-form t byte-compile--for-effect)
+            (byte-compile-body body byte-compile--for-effect))
+          (cl-assert (or (= byte-compile-depth init-depth)
+                         (= byte-compile-depth (1+ init-depth))))
+          (byte-compile-goto 'byte-goto donetag)
+          (setcdr (cdr donetag) nil)))
+
+      (byte-compile-out-tag default-tag)
+      (if default-case
+          (byte-compile-body-do-effect default-case)
+        (byte-compile-constant nil))
+      (byte-compile-out-tag donetag)
+      (push jump-table byte-compile-jump-tables))))
+
 (defun byte-compile-cond (clauses)
-  (let ((donetag (byte-compile-make-tag))
-	nexttag clause)
-    (while (setq clauses (cdr clauses))
-      (setq clause (car clauses))
-      (cond ((or (eq (car clause) t)
-		 (and (eq (car-safe (car clause)) 'quote)
-		      (car-safe (cdr-safe (car clause)))))
-	     ;; Unconditional clause
-	     (setq clause (cons t clause)
-		   clauses nil))
-	    ((cdr clauses)
-	     (byte-compile-form (car clause))
-	     (if (null (cdr clause))
-		 ;; First clause is a singleton.
-		 (byte-compile-goto-if t byte-compile--for-effect donetag)
-	       (setq nexttag (byte-compile-make-tag))
-	       (byte-compile-goto 'byte-goto-if-nil nexttag)
-	       (byte-compile-maybe-guarded (car clause)
-		 (byte-compile-body (cdr clause) byte-compile--for-effect))
-	       (byte-compile-goto 'byte-goto donetag)
-	       (byte-compile-out-tag nexttag)))))
-    ;; Last clause
-    (let ((guard (car clause)))
-      (and (cdr clause) (not (eq guard t))
-	   (progn (byte-compile-form guard)
-		  (byte-compile-goto-if nil byte-compile--for-effect donetag)
-		  (setq clause (cdr clause))))
-      (byte-compile-maybe-guarded guard
-	(byte-compile-body-do-effect clause)))
-    (byte-compile-out-tag donetag)))
+  (or (and byte-compile-cond-use-jump-table
+           (byte-compile-cond-jump-table clauses))
+    (let ((donetag (byte-compile-make-tag))
+          nexttag clause)
+      (while (setq clauses (cdr clauses))
+        (setq clause (car clauses))
+        (cond ((or (eq (car clause) t)
+                   (and (eq (car-safe (car clause)) 'quote)
+                        (car-safe (cdr-safe (car clause)))))
+               ;; Unconditional clause
+               (setq clause (cons t clause)
+                     clauses nil))
+              ((cdr clauses)
+               (byte-compile-form (car clause))
+               (if (null (cdr clause))
+                   ;; First clause is a singleton.
+                   (byte-compile-goto-if t byte-compile--for-effect donetag)
+                 (setq nexttag (byte-compile-make-tag))
+                 (byte-compile-goto 'byte-goto-if-nil nexttag)
+                 (byte-compile-maybe-guarded (car clause)
+                   (byte-compile-body (cdr clause) byte-compile--for-effect))
+                 (byte-compile-goto 'byte-goto donetag)
+                 (byte-compile-out-tag nexttag)))))
+      ;; Last clause
+      (let ((guard (car clause)))
+        (and (cdr clause) (not (eq guard t))
+             (progn (byte-compile-form guard)
+                    (byte-compile-goto-if nil byte-compile--for-effect donetag)
+                    (setq clause (cdr clause))))
+        (byte-compile-maybe-guarded guard
+          (byte-compile-body-do-effect clause)))
+      (byte-compile-out-tag donetag))))
 
 (defun byte-compile-and (form)
   (let ((failtag (byte-compile-make-tag))
@@ -4528,7 +4731,7 @@ binding slots have been popped."
 	(and byte-compile-depth
              (not (= (cdr (cdr tag)) byte-compile-depth))
              (error "Compiler bug: depth conflict at tag %d" (car (cdr tag))))
-	(setq byte-compile-depth (cdr (cdr tag))))
+        (setq byte-compile-depth (cdr (cdr tag))))
     (setcdr (cdr tag) byte-compile-depth)))
 
 (defun byte-compile-goto (opcode tag)

@@ -1,6 +1,6 @@
 ;;; jka-compr.el --- reading/writing/loading compressed files
 
-;; Copyright (C) 1993-1995, 1997, 1999-2016 Free Software Foundation,
+;; Copyright (C) 1993-1995, 1997, 1999-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Jay K. Adams <jka@ece.cmu.edu>
@@ -357,7 +357,10 @@ There should be no more than seven characters after the final `/'."
 	  (and (or (eq visit t)
 		   (eq visit nil)
 		   (stringp visit))
-	       (message "Wrote %s" visit-file))
+	       (message "Wrote `%s' (%d characters)" visit-file
+                        (cond ((null start) (buffer-size))
+                              ((stringp start) (length start))
+                              (t (- end start)))))
 
 	  ;; ensure `last-coding-system-used' has an appropriate value
 	  (setq last-coding-system-used coding-system-used)

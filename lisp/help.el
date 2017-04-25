@@ -1,6 +1,6 @@
 ;;; help.el --- help commands for Emacs
 
-;; Copyright (C) 1985-1986, 1993-1994, 1998-2016 Free Software
+;; Copyright (C) 1985-1986, 1993-1994, 1998-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -1419,7 +1419,7 @@ ARGLIST can also be t or a string of the form \"(FUN ARG1 ARG2 ...)\"."
 
 (defun help-function-arglist (def &optional preserve-names)
   "Return a formal argument list for the function DEF.
-IF PRESERVE-NAMES is non-nil, return a formal arglist that uses
+If PRESERVE-NAMES is non-nil, return a formal arglist that uses
 the same names as used in the original source code, when possible."
   ;; Handle symbols aliased to other symbols.
   (if (and (symbolp def) (fboundp def)) (setq def (indirect-function def)))

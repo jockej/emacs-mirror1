@@ -1,5 +1,5 @@
 /* Flags and parameters describing terminal's characteristics.
-   Copyright (C) 1985-1986, 2001-2016 Free Software Foundation, Inc.
+   Copyright (C) 1985-1986, 2001-2017 Free Software Foundation, Inc.
 
 This file is part of GNU Emacs.
 
@@ -148,10 +148,6 @@ struct tty_display_info
   int TN_no_color_video;
 
   int TN_max_colors;            /* "Co" -- number of colors.  */
-
-  /* "pa" -- max. number of color pairs on screen.  Not handled yet.
-     Could be a problem if not equal to TN_max_colors * TN_max_colors.  */
-  int TN_max_pairs;
 
   /* "op" -- SVr4 set default pair to its original value.  */
   const char *TS_orig_pair;

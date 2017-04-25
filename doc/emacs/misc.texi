@@ -1,5 +1,5 @@
 @c This is part of the Emacs manual.
-@c Copyright (C) 1985-1987, 1993-1995, 1997, 2000-2016 Free Software
+@c Copyright (C) 1985-1987, 1993-1995, 1997, 2000-2017 Free Software
 @c Foundation, Inc.
 @c See file emacs.texi for copying conditions.
 @iftex
@@ -1846,6 +1846,12 @@ option is mainly useful for developers.
 @itemx --quiet
 Do not let @command{emacsclient} display messages about waiting for
 Emacs or connecting to remote server sockets.
+
+@item -u
+@itemx --suppress-output
+Do not let @command{emacsclient} display results returned from the
+server.  Mostly useful in combination with @samp{-e} when the
+evaluation performed is for side-effect rather than result.
 
 @item -s @var{server-name}
 @itemx --socket-name=@var{server-name}

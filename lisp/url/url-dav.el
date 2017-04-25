@@ -1,6 +1,6 @@
 ;;; url-dav.el --- WebDAV support
 
-;; Copyright (C) 2001, 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2001, 2004-2017 Free Software Foundation, Inc.
 
 ;; Author: Bill Perry <wmperry@gnu.org>
 ;; Maintainer: emacs-devel@gnu.org
@@ -518,7 +518,7 @@ FAILURE-RESULTS is a list of (URL STATUS)."
 				    depth '(("Timeout" . "Infinite"))))
 
     ;; Get the parent URL ready for expand-file-name
-    (if (not (vectorp url))
+    (if (not (url-p url))
 	(setq url (url-generic-parse-url url)))
 
     ;; Walk thru the response list, fully expand the URL, and grab the
@@ -540,7 +540,7 @@ FAILURE-RESULTS is a list of (URL STATUS)."
 	(child-url nil)
 	(child-results nil)
 	(results nil))
-    (if (not (vectorp url))
+    (if (not (url-p url))
 	(setq url (url-generic-parse-url url)))
 
     (while response

@@ -1,6 +1,6 @@
 ;;; obarray.el --- obarray functions -*- lexical-binding: t -*-
 
-;; Copyright (C) 2015-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2015-2017 Free Software Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
 ;; Keywords: obarray functions
@@ -36,6 +36,10 @@
     (if (< 0 size)
         (make-vector size 0)
       (signal 'wrong-type-argument '(size 0)))))
+
+(defun obarray-size (ob)
+  "Return the number of slots of obarray OB."
+  (length ob))
 
 (defun obarrayp (object)
   "Return t if OBJECT is an obarray."

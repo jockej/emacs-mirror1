@@ -1,6 +1,6 @@
 ;;; imenu-tests.el --- Test suite for imenu.
 
-;; Copyright (C) 2013-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2017 Free Software Foundation, Inc.
 
 ;; Author: Masatake YAMATO <yamato@redhat.com>
 ;; Keywords: tools convenience
@@ -82,6 +82,16 @@ function ABC_D()
 {
 }
 " '("a" "b" "c" "ABC_D"))
+
+(ert-deftest imenu--sort-by-position-pairs ()
+  (should (imenu--sort-by-position '("a" . 2) '("a" . 3)))
+  (should-not (imenu--sort-by-position '("a" . 3) '("a" . 2))))
+
+;; Regression test for bug#26457: 25.2; Cannot pass a function to
+;; imenu-generic-expression
+(ert-deftest imenu--sort-by-position-list ()
+  (should (imenu--sort-by-position '("a" 2 nil) '("a" 3 nil)))
+  (should-not (imenu--sort-by-position '("a" 3 nil) '("a" 2 nil))))
 
 (provide 'imenu-tests)
 

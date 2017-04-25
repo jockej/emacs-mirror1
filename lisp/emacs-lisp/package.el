@@ -1,6 +1,6 @@
 ;;; package.el --- Simple package system for Emacs  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2007-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2017 Free Software Foundation, Inc.
 
 ;; Author: Tom Tromey <tromey@redhat.com>
 ;;         Daniel Hackney <dan@haxney.org>
@@ -194,14 +194,16 @@ If VERSION is nil, the package is not loaded (it is \"disabled\")."
   :risky t
   :version "24.1")
 
-(defcustom package-archives '(("gnu" . "http://elpa.gnu.org/packages/"))
+(defcustom package-archives `(("gnu" .
+                               ,(format "http%s://elpa.gnu.org/packages/"
+                                        (if (gnutls-available-p) "s" ""))))
   "An alist of archives from which to fetch.
 The default value points to the GNU Emacs package repository.
 
 Each element has the form (ID . LOCATION).
  ID is an archive name, as a string.
  LOCATION specifies the base location for the archive.
-  If it starts with \"http:\", it is treated as a HTTP URL;
+  If it starts with \"http(s):\", it is treated as an HTTP(S) URL;
   otherwise it should be an absolute directory name.
   (Other types of URL are currently not supported.)
 
@@ -210,7 +212,7 @@ a package can run arbitrary code."
   :type '(alist :key-type (string :tag "Archive name")
                 :value-type (string :tag "URL or directory name"))
   :risky t
-  :version "24.1")
+  :version "26.1")                      ; gnutls test
 
 (defcustom package-menu-hide-low-priority 'archive
   "If non-nil, hide low priority packages from the packages menu.
@@ -304,6 +306,23 @@ contrast, `package-user-dir' contains packages for personal use."
 
 (declare-function epg-find-configuration "epg-config"
                   (protocol &optional no-cache program-alist))
+
+(defcustom package-gnupghome-dir (expand-file-name "gnupg" package-user-dir)
+  "Directory containing GnuPG keyring or nil.
+This variable specifies the GnuPG home directory used by package.
+That directory is passed via the option \"--homedir\" to GnuPG.
+If nil, do not use the option \"--homedir\", but stick with GnuPG's
+default directory."
+  :type `(choice
+          (const
+           :tag "Default Emacs package management GnuPG home directory"
+           ,(expand-file-name "gnupg" package-user-dir))
+          (const
+           :tag "Default GnuPG directory (GnuPG option --homedir not used)"
+           nil)
+          (directory :tag "A specific GnuPG --homedir"))
+  :risky t
+  :version "26.1")
 
 (defcustom package-check-signature
   (if (and (require 'epg-config)
@@ -1207,9 +1226,9 @@ errors signaled by ERROR-FORM or by BODY).
   "Check signature CONTENT against STRING.
 SIG-FILE is the name of the signature file, used when signaling
 errors."
-  (let* ((context (epg-make-context 'OpenPGP))
-         (homedir (expand-file-name "gnupg" package-user-dir)))
-    (setf (epg-context-home-directory context) homedir)
+  (let ((context (epg-make-context 'OpenPGP)))
+    (when package-gnupghome-dir
+      (setf (epg-context-home-directory context) package-gnupghome-dir))
     (condition-case error
         (epg-verify-string context content string)
       (error (package--display-verify-error context sig-file)
@@ -1236,7 +1255,7 @@ errors."
   "Check signature of the current buffer.
 Download the signature file from LOCATION by appending \".sig\"
 to FILE.
-GnuPG keyring is located under \"gnupg\" in `package-user-dir'.
+GnuPG keyring location depends on `package-gnupghome-dir'.
 STRING is the string to verify, it defaults to `buffer-string'.
 If ASYNC is non-nil, the download of the signature file is
 done asynchronously.
@@ -1445,13 +1464,13 @@ individual packages after calling `package-initialize' -- this is
 taken care of by `package-initialize'."
   (interactive)
   (setq package-alist nil)
-  (if (equal user-init-file load-file-name)
-      ;; If `package-initialize' is being called as part of loading
-      ;; the init file, it's obvious we don't need to ensure-init.
-      (setq package--init-file-ensured t
-            ;; And likely we don't need to run it again after init.
-            package-enable-at-startup nil)
-    (package--ensure-init-file))
+  (if after-init-time
+      (package--ensure-init-file)
+    ;; If `package-initialize' is before we finished loading the init
+    ;; file, it's obvious we don't need to ensure-init.
+    (setq package--init-file-ensured t
+          ;; And likely we don't need to run it again after init.
+          package-enable-at-startup nil))
   (package-load-all-descriptors)
   (package-read-all-archive-contents)
   (unless no-activate
@@ -1476,11 +1495,11 @@ taken care of by `package-initialize'."
   "Import keys from FILE."
   (interactive "fFile: ")
   (setq file (expand-file-name file))
-  (let ((context (epg-make-context 'OpenPGP))
-        (homedir (expand-file-name "gnupg" package-user-dir)))
-    (with-file-modes 448
-      (make-directory homedir t))
-    (setf (epg-context-home-directory context) homedir)
+  (let ((context (epg-make-context 'OpenPGP)))
+    (when package-gnupghome-dir
+      (with-file-modes 448
+        (make-directory package-gnupghome-dir t))
+      (setf (epg-context-home-directory context) package-gnupghome-dir))
     (message "Importing %s..." (file-name-nondirectory file))
     (epg-import-keys-from-file context file)
     (message "Importing %s...done" (file-name-nondirectory file))))
@@ -2352,6 +2371,12 @@ Otherwise no newline is inserted."
                                      (package-desc-name pkg))))
         (insert "\n")))
     (when homepage
+      ;; Prefer https for the homepage of packages on gnu.org.
+      (if (string-match-p "^http://\\(elpa\\|www\\)\\.gnu\\.org/" homepage)
+          (let ((gnu (cdr (assoc "gnu" package-archives))))
+            (and gnu (string-match-p "^https" gnu)
+                 (setq homepage
+                       (replace-regexp-in-string "^http" "https" homepage)))))
       (package--print-help-section "Homepage")
       (help-insert-xref-button homepage 'help-url homepage)
       (insert "\n"))

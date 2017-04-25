@@ -1,6 +1,6 @@
-;;; tramp-compat.el --- Tramp compatibility functions
+;;; tramp-compat.el --- Tramp compatibility functions  -*- lexical-binding:t -*-
 
-;; Copyright (C) 2007-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2007-2017 Free Software Foundation, Inc.
 
 ;; Author: Michael Albinus <michael.albinus@gmx.de>
 ;; Keywords: comm, processes
@@ -378,6 +378,14 @@ If NAME is a remote file name, the local part of NAME is unquoted."
 	     (replace-match
 	      (if (= (length localname) 2) "/" "") nil t localname)))
 	  (concat (file-remote-p name) localname))))))
+
+;; `tramp-syntax' has changed its meaning in Emacs 26.  We still
+;; support old settings.
+(defsubst tramp-compat-tramp-syntax ()
+  "Return proper value of `tramp-syntax'."
+  (cond ((eq tramp-syntax 'ftp) 'default)
+	((eq tramp-syntax 'sep) 'separate)
+	(t tramp-syntax)))
 
 (provide 'tramp-compat)
 

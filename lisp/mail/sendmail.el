@@ -1,6 +1,6 @@
 ;;; sendmail.el --- mail sending commands for Emacs
 
-;; Copyright (C) 1985-1986, 1992-1996, 1998, 2000-2016 Free Software
+;; Copyright (C) 1985-1986, 1992-1996, 1998, 2000-2017 Free Software
 ;; Foundation, Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -28,8 +28,8 @@
 
 ;;; Code:
 (require 'mail-utils)
-
 (require 'rfc2047)
+(autoload 'message-make-date "message")
 
 (defgroup sendmail nil
   "Mail sending commands for Emacs."
@@ -555,8 +555,9 @@ This also saves the value of `send-mail-function' via Customize."
 	    (goto-char (point-min))
 	    (display-buffer (current-buffer))
 	    (let ((completion-ignore-case t))
-	      (completing-read "Send mail via: "
-			       options nil 'require-match)))))
+              (completing-read
+               (format "Send mail via (default %s): " (caar options))
+               options nil 'require-match nil nil (car options))))))
     (customize-save-variable 'send-mail-function
 			     (cdr (assoc-string choice options t)))))
 
@@ -1409,6 +1410,7 @@ just append to the file, in Babyl format if necessary."
 	(require 'mail-utils)
 	(insert (mail-rfc822-time-zone time) " ")
 	(goto-char (point-max))
+	(insert "Date: " (message-make-date) "\n")
 	(insert-buffer-substring mailbuf)
 	;; Make sure messages are separated.
 	(goto-char (point-max))

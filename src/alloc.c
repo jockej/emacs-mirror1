@@ -1,6 +1,6 @@
 /* Storage allocation and gc for GNU Emacs Lisp interpreter.
 
-Copyright (C) 1985-1986, 1988, 1993-1995, 1997-2016 Free Software
+Copyright (C) 1985-1986, 1988, 1993-1995, 1997-2017 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -2872,45 +2872,15 @@ usage: (list &rest OBJECTS)  */)
 
 DEFUN ("make-list", Fmake_list, Smake_list, 2, 2, 0,
        doc: /* Return a newly created list of length LENGTH, with each element being INIT.  */)
-  (register Lisp_Object length, Lisp_Object init)
+  (Lisp_Object length, Lisp_Object init)
 {
-  register Lisp_Object val;
-  register EMACS_INT size;
-
+  Lisp_Object val = Qnil;
   CHECK_NATNUM (length);
-  size = XFASTINT (length);
 
-  val = Qnil;
-  while (size > 0)
+  for (EMACS_INT size = XFASTINT (length); 0 < size; size--)
     {
       val = Fcons (init, val);
-      --size;
-
-      if (size > 0)
-	{
-	  val = Fcons (init, val);
-	  --size;
-
-	  if (size > 0)
-	    {
-	      val = Fcons (init, val);
-	      --size;
-
-	      if (size > 0)
-		{
-		  val = Fcons (init, val);
-		  --size;
-
-		  if (size > 0)
-		    {
-		      val = Fcons (init, val);
-		      --size;
-		    }
-		}
-	    }
-	}
-
-      QUIT;
+      rarely_quit (size);
     }
 
   return val;
@@ -3306,13 +3276,7 @@ sweep_vectors (void)
 	  VECTOR_UNMARK (vector);
 	  total_vectors++;
 	  if (vector->header.size & PSEUDOVECTOR_FLAG)
-	    {
-	      /* All non-bool pseudovectors are small enough to be allocated
-		 from vector blocks.  This code should be redesigned if some
-		 pseudovector type grows beyond VBLOCK_BYTES_MAX.  */
-	      eassert (PSEUDOVECTOR_TYPEP (&vector->header, PVEC_BOOL_VECTOR));
-              total_vector_slots += vector_nbytes (vector) / word_size;
-	    }
+            total_vector_slots += vector_nbytes (vector) / word_size;
 	  else
 	    total_vector_slots
 	      += header_size / word_size + vector->header.size;
@@ -3407,7 +3371,7 @@ allocate_pseudovector (int memlen, int lisplen,
   eassert (0 <= tag && tag <= PVEC_FONT);
   eassert (0 <= lisplen && lisplen <= zerolen && zerolen <= memlen);
   eassert (memlen - lisplen <= (1 << PSEUDOVECTOR_REST_BITS) - 1);
-  eassert (lisplen <= (1 << PSEUDOVECTOR_SIZE_BITS) - 1);
+  eassert (lisplen <= PSEUDOVECTOR_SIZE_MASK);
 
   /* Only the first LISPLEN slots will be traced normally by the GC.  */
   memclear (v->contents, zerolen * word_size);
@@ -3427,6 +3391,54 @@ allocate_buffer (void)
   /* Note that the rest fields of B are not initialized.  */
   return b;
 }
+
+
+/* Allocate a record with COUNT slots.  COUNT must be positive, and
+   includes the type slot.  */
+
+static struct Lisp_Vector *
+allocate_record (EMACS_INT count)
+{
+  if (count > PSEUDOVECTOR_SIZE_MASK)
+    error ("Attempt to allocate a record of %"pI"d slots; max is %d",
+	   count, PSEUDOVECTOR_SIZE_MASK);
+  struct Lisp_Vector *p = allocate_vectorlike (count);
+  p->header.size = count;
+  XSETPVECTYPE (p, PVEC_RECORD);
+  return p;
+}
+
+
+DEFUN ("make-record", Fmake_record, Smake_record, 3, 3, 0,
+       doc: /* Create a new record.
+TYPE is its type as returned by `type-of'; it should be either a
+symbol or a type descriptor.  SLOTS is the number of non-type slots,
+each initialized to INIT.  */)
+  (Lisp_Object type, Lisp_Object slots, Lisp_Object init)
+{
+  CHECK_NATNUM (slots);
+  EMACS_INT size = XFASTINT (slots) + 1;
+  struct Lisp_Vector *p = allocate_record (size);
+  p->contents[0] = type;
+  for (ptrdiff_t i = 1; i < size; i++)
+    p->contents[i] = init;
+  return make_lisp_ptr (p, Lisp_Vectorlike);
+}
+
+
+DEFUN ("record", Frecord, Srecord, 1, MANY, 0,
+       doc: /* Create a new record.
+TYPE is its type as returned by `type-of'; it should be either a
+symbol or a type descriptor.  SLOTS is used to initialize the record
+slots with shallow copies of the arguments.
+usage: (record TYPE &rest SLOTS) */)
+  (ptrdiff_t nargs, Lisp_Object *args)
+{
+  struct Lisp_Vector *p = allocate_record (nargs);
+  memcpy (p->contents, args, nargs * sizeof *args);
+  return make_lisp_ptr (p, Lisp_Vectorlike);
+}
+
 
 DEFUN ("make-vector", Fmake_vector, Smake_vector, 2, 2, 0,
        doc: /* Return a newly created vector of length LENGTH, with each element being INIT.
@@ -4683,7 +4695,7 @@ live_vector_p (struct mem_node *m, void *p)
 	     && vector <= (struct Lisp_Vector *) p)
 	{
 	  if (!PSEUDOVECTOR_TYPEP (&vector->header, PVEC_FREE) && vector == p)
-	    return 1;
+	    return true;
 	  else
 	    vector = ADVANCE (vector, vector_nbytes (vector));
 	}
@@ -4922,12 +4934,19 @@ mark_memory (void *start, void *end)
     }
 }
 
-#if !defined GC_SAVE_REGISTERS_ON_STACK && !defined GC_SETJMP_WORKS
+#ifndef HAVE___BUILTIN_UNWIND_INIT
+
+# ifdef GC_SETJMP_WORKS
+static void
+test_setjmp (void)
+{
+}
+# else
 
 static bool setjmp_tested_p;
 static int longjmps_done;
 
-#define SETJMP_WILL_LIKELY_WORK "\
+#  define SETJMP_WILL_LIKELY_WORK "\
 \n\
 Emacs garbage collector has been changed to use conservative stack\n\
 marking.  Emacs has determined that the method it uses to do the\n\
@@ -4940,7 +4959,7 @@ verify that the methods used are appropriate for your system.\n\
 Please mail the result to <emacs-devel@gnu.org>.\n\
 "
 
-#define SETJMP_WILL_NOT_WORK "\
+#  define SETJMP_WILL_NOT_WORK "\
 \n\
 Emacs garbage collector has been changed to use conservative stack\n\
 marking.  Emacs has determined that the default method it uses to do the\n\
@@ -4966,6 +4985,9 @@ Please mail the result to <emacs-devel@gnu.org>.\n\
 static void
 test_setjmp (void)
 {
+  if (setjmp_tested_p)
+    return;
+  setjmp_tested_p = true;
   char buf[10];
   register int x;
   sys_jmp_buf jbuf;
@@ -5002,9 +5024,60 @@ test_setjmp (void)
   if (longjmps_done == 1)
     sys_longjmp (jbuf, 1);
 }
+# endif /* ! GC_SETJMP_WORKS */
+#endif /* ! HAVE___BUILTIN_UNWIND_INIT */
 
-#endif /* not GC_SAVE_REGISTERS_ON_STACK && not GC_SETJMP_WORKS */
+/* The type of an object near the stack top, whose address can be used
+   as a stack scan limit.  */
+typedef union
+{
+  /* Align the stack top properly.  Even if !HAVE___BUILTIN_UNWIND_INIT,
+     jmp_buf may not be aligned enough on darwin-ppc64.  */
+  max_align_t o;
+#ifndef HAVE___BUILTIN_UNWIND_INIT
+  sys_jmp_buf j;
+  char c;
+#endif
+} stacktop_sentry;
 
+/* Force callee-saved registers and register windows onto the stack.
+   Use the platform-defined __builtin_unwind_init if available,
+   obviating the need for machine dependent methods.  */
+#ifndef HAVE___BUILTIN_UNWIND_INIT
+# ifdef __sparc__
+   /* This trick flushes the register windows so that all the state of
+      the process is contained in the stack.
+      FreeBSD does not have a ta 3 handler, so handle it specially.
+      FIXME: Code in the Boehm GC suggests flushing (with 'flushrs') is
+      needed on ia64 too.  See mach_dep.c, where it also says inline
+      assembler doesn't work with relevant proprietary compilers.  */
+#  if defined __sparc64__ && defined __FreeBSD__
+#   define __builtin_unwind_init() asm ("flushw")
+#  else
+#   define __builtin_unwind_init() asm ("ta 3")
+#  endif
+# else
+#  define __builtin_unwind_init() ((void) 0)
+# endif
+#endif
+
+/* Set *P to the address of the top of the stack.  This must be a
+   macro, not a function, so that it is executed in the caller’s
+   environment.  It is not inside a do-while so that its storage
+   survives the macro.  */
+#ifdef HAVE___BUILTIN_UNWIND_INIT
+# define SET_STACK_TOP_ADDRESS(p)	\
+   stacktop_sentry sentry;		\
+   __builtin_unwind_init ();		\
+   *(p) = &sentry
+#else
+# define SET_STACK_TOP_ADDRESS(p)		\
+   stacktop_sentry sentry;			\
+   __builtin_unwind_init ();			\
+   test_setjmp ();				\
+   sys_setjmp (sentry.j);			\
+   *(p) = &sentry + (stack_bottom < &sentry.c)
+#endif
 
 /* Mark live Lisp objects on the C stack.
 
@@ -5016,12 +5089,7 @@ test_setjmp (void)
    We have to mark Lisp objects in CPU registers that can hold local
    variables or are used to pass parameters.
 
-   If GC_SAVE_REGISTERS_ON_STACK is defined, it should expand to
-   something that either saves relevant registers on the stack, or
-   calls mark_maybe_object passing it each register's contents.
-
-   If GC_SAVE_REGISTERS_ON_STACK is not defined, the current
-   implementation assumes that calling setjmp saves registers we need
+   This code assumes that calling setjmp saves registers we need
    to see in a jmp_buf which itself lies on the stack.  This doesn't
    have to be true!  It must be verified for each system, possibly
    by taking a look at the source code of setjmp.
@@ -5085,62 +5153,9 @@ flush_stack_call_func (void (*func) (void *arg), void *arg)
 {
   void *end;
   struct thread_state *self = current_thread;
-
-#ifdef HAVE___BUILTIN_UNWIND_INIT
-  /* Force callee-saved registers and register windows onto the stack.
-     This is the preferred method if available, obviating the need for
-     machine dependent methods.  */
-  __builtin_unwind_init ();
-  end = &end;
-#else /* not HAVE___BUILTIN_UNWIND_INIT */
-#ifndef GC_SAVE_REGISTERS_ON_STACK
-  /* jmp_buf may not be aligned enough on darwin-ppc64 */
-  union aligned_jmpbuf {
-    Lisp_Object o;
-    sys_jmp_buf j;
-  } j;
-  volatile bool stack_grows_down_p = (char *) &j > (char *) stack_bottom;
-#endif
-  /* This trick flushes the register windows so that all the state of
-     the process is contained in the stack.  */
-  /* Fixme: Code in the Boehm GC suggests flushing (with `flushrs') is
-     needed on ia64 too.  See mach_dep.c, where it also says inline
-     assembler doesn't work with relevant proprietary compilers.  */
-#ifdef __sparc__
-#if defined (__sparc64__) && defined (__FreeBSD__)
-  /* FreeBSD does not have a ta 3 handler.  */
-  asm ("flushw");
-#else
-  asm ("ta 3");
-#endif
-#endif
-
-  /* Save registers that we need to see on the stack.  We need to see
-     registers used to hold register variables and registers used to
-     pass parameters.  */
-#ifdef GC_SAVE_REGISTERS_ON_STACK
-  GC_SAVE_REGISTERS_ON_STACK (end);
-#else /* not GC_SAVE_REGISTERS_ON_STACK */
-
-#ifndef GC_SETJMP_WORKS  /* If it hasn't been checked yet that
-			    setjmp will definitely work, test it
-			    and print a message with the result
-			    of the test.  */
-  if (!setjmp_tested_p)
-    {
-      setjmp_tested_p = 1;
-      test_setjmp ();
-    }
-#endif /* GC_SETJMP_WORKS */
-
-  sys_setjmp (j.j);
-  end = stack_grows_down_p ? (char *) &j + sizeof j : (char *) &j;
-#endif /* not GC_SAVE_REGISTERS_ON_STACK */
-#endif /* not HAVE___BUILTIN_UNWIND_INIT */
-
+  SET_STACK_TOP_ADDRESS (&end);
   self->stack_top = end;
-  (*func) (arg);
-
+  func (arg);
   eassert (current_thread == self);
 }
 
@@ -5469,6 +5484,38 @@ make_pure_vector (ptrdiff_t len)
   return new;
 }
 
+/* Copy all contents and parameters of TABLE to a new table allocated
+   from pure space, return the purified table.  */
+static struct Lisp_Hash_Table *
+purecopy_hash_table (struct Lisp_Hash_Table *table)
+{
+  eassert (NILP (table->weak));
+  eassert (table->pure);
+
+  struct Lisp_Hash_Table *pure = pure_alloc (sizeof *pure, Lisp_Vectorlike);
+  struct hash_table_test pure_test = table->test;
+
+  /* Purecopy the hash table test.  */
+  pure_test.name = purecopy (table->test.name);
+  pure_test.user_hash_function = purecopy (table->test.user_hash_function);
+  pure_test.user_cmp_function = purecopy (table->test.user_cmp_function);
+
+  pure->header = table->header;
+  pure->weak = purecopy (Qnil);
+  pure->hash = purecopy (table->hash);
+  pure->next = purecopy (table->next);
+  pure->index = purecopy (table->index);
+  pure->count = table->count;
+  pure->next_free = table->next_free;
+  pure->pure = table->pure;
+  pure->rehash_threshold = table->rehash_threshold;
+  pure->rehash_size = table->rehash_size;
+  pure->key_and_value = purecopy (table->key_and_value);
+  pure->test = pure_test;
+
+  return pure;
+}
+
 DEFUN ("purecopy", Fpurecopy, Spurecopy, 1, 1, 0,
        doc: /* Make a copy of object OBJ in pure storage.
 Recursively copies contents of vectors and cons cells.
@@ -5477,13 +5524,19 @@ Does not copy symbols.  Copies strings without text properties.  */)
 {
   if (NILP (Vpurify_flag))
     return obj;
-  else if (MARKERP (obj) || OVERLAYP (obj)
-	   || HASH_TABLE_P (obj) || SYMBOLP (obj))
+  else if (MARKERP (obj) || OVERLAYP (obj) || SYMBOLP (obj))
     /* Can't purify those.  */
     return obj;
   else
     return purecopy (obj);
 }
+
+/* Pinned objects are marked before every GC cycle.  */
+static struct pinned_object
+{
+  Lisp_Object object;
+  struct pinned_object *next;
+} *pinned_objects;
 
 static Lisp_Object
 purecopy (Lisp_Object obj)
@@ -5512,7 +5565,27 @@ purecopy (Lisp_Object obj)
     obj = make_pure_string (SSDATA (obj), SCHARS (obj),
 			    SBYTES (obj),
 			    STRING_MULTIBYTE (obj));
-  else if (COMPILEDP (obj) || VECTORP (obj) || HASH_TABLE_P (obj))
+  else if (HASH_TABLE_P (obj))
+    {
+      struct Lisp_Hash_Table *table = XHASH_TABLE (obj);
+      /* Do not purify hash tables which haven't been defined with
+         :purecopy as non-nil or are weak - they aren't guaranteed to
+         not change.  */
+      if (!NILP (table->weak) || !table->pure)
+        {
+          /* Instead, add the hash table to the list of pinned objects,
+             so that it will be marked during GC.  */
+          struct pinned_object *o = xmalloc (sizeof *o);
+          o->object = obj;
+          o->next = pinned_objects;
+          pinned_objects = o;
+          return obj; /* Don't hash cons it.  */
+        }
+
+      struct Lisp_Hash_Table *h = purecopy_hash_table (table);
+      XSET_HASH_TABLE (obj, h);
+    }
+  else if (COMPILEDP (obj) || VECTORP (obj) || RECORDP (obj))
     {
       struct Lisp_Vector *objp = XVECTOR (obj);
       ptrdiff_t nbytes = vector_nbytes (objp);
@@ -5729,6 +5802,13 @@ compact_undo_list (Lisp_Object list)
 }
 
 static void
+mark_pinned_objects (void)
+{
+  for (struct pinned_object *pobj = pinned_objects; pobj; pobj = pobj->next)
+    mark_object (pobj->object);
+}
+
+static void
 mark_pinned_symbols (void)
 {
   struct symbol_block *sblk;
@@ -5848,6 +5928,7 @@ garbage_collect_1 (void *end)
   for (i = 0; i < staticidx; i++)
     mark_object (*staticvec[i]);
 
+  mark_pinned_objects ();
   mark_pinned_symbols ();
   mark_terminals ();
   mark_kboards ();
@@ -6016,58 +6097,7 @@ See Info node `(elisp)Garbage Collection'.  */)
   (void)
 {
   void *end;
-
-#ifdef HAVE___BUILTIN_UNWIND_INIT
-  /* Force callee-saved registers and register windows onto the stack.
-     This is the preferred method if available, obviating the need for
-     machine dependent methods.  */
-  __builtin_unwind_init ();
-  end = &end;
-#else /* not HAVE___BUILTIN_UNWIND_INIT */
-#ifndef GC_SAVE_REGISTERS_ON_STACK
-  /* jmp_buf may not be aligned enough on darwin-ppc64 */
-  union aligned_jmpbuf {
-    Lisp_Object o;
-    sys_jmp_buf j;
-  } j;
-  volatile bool stack_grows_down_p = (char *) &j > (char *) stack_base;
-#endif
-  /* This trick flushes the register windows so that all the state of
-     the process is contained in the stack.  */
-  /* Fixme: Code in the Boehm GC suggests flushing (with `flushrs') is
-     needed on ia64 too.  See mach_dep.c, where it also says inline
-     assembler doesn't work with relevant proprietary compilers.  */
-#ifdef __sparc__
-#if defined (__sparc64__) && defined (__FreeBSD__)
-  /* FreeBSD does not have a ta 3 handler.  */
-  asm ("flushw");
-#else
-  asm ("ta 3");
-#endif
-#endif
-
-  /* Save registers that we need to see on the stack.  We need to see
-     registers used to hold register variables and registers used to
-     pass parameters.  */
-#ifdef GC_SAVE_REGISTERS_ON_STACK
-  GC_SAVE_REGISTERS_ON_STACK (end);
-#else /* not GC_SAVE_REGISTERS_ON_STACK */
-
-#ifndef GC_SETJMP_WORKS  /* If it hasn't been checked yet that
-			    setjmp will definitely work, test it
-			    and print a message with the result
-			    of the test.  */
-  if (!setjmp_tested_p)
-    {
-      setjmp_tested_p = 1;
-      test_setjmp ();
-    }
-#endif /* GC_SETJMP_WORKS */
-
-  sys_setjmp (j.j);
-  end = stack_grows_down_p ? (char *) &j + sizeof j : (char *) &j;
-#endif /* not GC_SAVE_REGISTERS_ON_STACK */
-#endif /* not HAVE___BUILTIN_UNWIND_INIT */
+  SET_STACK_TOP_ADDRESS (&end);
   return garbage_collect_1 (end);
 }
 
@@ -6418,26 +6448,22 @@ mark_object (Lisp_Object arg)
     case Lisp_Vectorlike:
       {
 	register struct Lisp_Vector *ptr = XVECTOR (obj);
-	register ptrdiff_t pvectype;
 
 	if (VECTOR_MARKED_P (ptr))
 	  break;
 
 #ifdef GC_CHECK_MARKED_OBJECTS
 	m = mem_find (po);
-	if (m == MEM_NIL && !SUBRP (obj) && !primary_thread_p (po))
+	if (m == MEM_NIL && !SUBRP (obj) && !main_thread_p (po))
 	  emacs_abort ();
 #endif /* GC_CHECK_MARKED_OBJECTS */
 
-	if (ptr->header.size & PSEUDOVECTOR_FLAG)
-	  pvectype = ((ptr->header.size & PVEC_TYPE_MASK)
-		      >> PSEUDOVECTOR_AREA_BITS);
-	else
-	  pvectype = PVEC_NORMAL_VECTOR;
+        enum pvec_type pvectype
+          = PSEUDOVECTOR_TYPE (ptr);
 
 	if (pvectype != PVEC_SUBR
 	    && pvectype != PVEC_BUFFER
-	    && !primary_thread_p (po))
+	    && !main_thread_p (po))
 	  CHECK_LIVE (live_vector_p);
 
 	switch (pvectype)
@@ -7276,9 +7302,9 @@ find_suspicious_object_in_range (void *begin, void *end)
 }
 
 static void
-note_suspicious_free (void* ptr)
+note_suspicious_free (void *ptr)
 {
-  struct suspicious_free_record* rec;
+  struct suspicious_free_record *rec;
 
   rec = &suspicious_free_history[suspicious_free_history_index++];
   if (suspicious_free_history_index ==
@@ -7293,7 +7319,7 @@ note_suspicious_free (void* ptr)
 }
 
 static void
-detect_suspicious_free (void* ptr)
+detect_suspicious_free (void *ptr)
 {
   int i;
 
@@ -7399,9 +7425,6 @@ init_alloc_once (void)
 void
 init_alloc (void)
 {
-#if !defined GC_SAVE_REGISTERS_ON_STACK && !defined GC_SETJMP_WORKS
-  setjmp_tested_p = longjmps_done = 0;
-#endif
   Vgc_elapsed = make_float (0.0);
   gcs_done = 0;
 
@@ -7513,10 +7536,12 @@ The time is in seconds as a floating point value.  */);
   defsubr (&Scons);
   defsubr (&Slist);
   defsubr (&Svector);
+  defsubr (&Srecord);
   defsubr (&Sbool_vector);
   defsubr (&Smake_byte_code);
   defsubr (&Smake_list);
   defsubr (&Smake_vector);
+  defsubr (&Smake_record);
   defsubr (&Smake_string);
   defsubr (&Smake_bool_vector);
   defsubr (&Smake_symbol);

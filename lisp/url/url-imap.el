@@ -1,6 +1,6 @@
 ;;; url-imap.el --- IMAP retrieval routines
 
-;; Copyright (C) 1999, 2004-2016 Free Software Foundation, Inc.
+;; Copyright (C) 1999, 2004-2017 Free Software Foundation, Inc.
 
 ;; Author: Simon Josefsson <jas@pdc.kth.se>
 ;; Keywords: comm, data, processes
@@ -50,7 +50,7 @@
 			  (nnimap-authenticator ,authenticator)))))
 
 (defun url-imap (url)
-  (unless (vectorp url)
+  (unless (url-p url)
     (signal 'wrong-type-error (list "Need a pre-parsed URL." url)))
   (with-current-buffer (generate-new-buffer " *url-imap*")
     (mm-disable-multibyte)

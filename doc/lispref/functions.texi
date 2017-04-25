@@ -1,6 +1,6 @@
 @c -*- mode: texinfo; coding: utf-8 -*-
 @c This is part of the GNU Emacs Lisp Reference Manual.
-@c Copyright (C) 1990-1995, 1998-1999, 2001-2016 Free Software
+@c Copyright (C) 1990-1995, 1998-1999, 2001-2017 Free Software
 @c Foundation, Inc.
 @c See the file elisp.texi for copying conditions.
 @node Functions
@@ -1862,6 +1862,13 @@ More specifically, the composition of the two functions behaves like:
 @node Porting old advice
 @subsection Adapting code using the old defadvice
 @cindex old advices, porting
+@c NB: The following index entries deliberately avoid ``old'',
+@c an adjective that does not come to mind for those who grew up
+@c on ‘defadvice’ et al.  For those folks, that way is ``current''.
+@c They discover its oldness reading this node.
+@cindex advices, porting from @code{defadvice}
+@findex defadvice
+@findex ad-activate
 
 A lot of code uses the old @code{defadvice} mechanism, which is largely made
 obsolete by the new @code{advice-add}, whose implementation and semantics is

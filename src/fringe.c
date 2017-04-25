@@ -1,5 +1,5 @@
 /* Fringe handling (split from xdisp.c).
-   Copyright (C) 1985-1988, 1993-1995, 1997-2016 Free Software
+   Copyright (C) 1985-1988, 1993-1995, 1997-2017 Free Software
    Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -1449,6 +1449,19 @@ init_fringe_bitmap (int which, struct fringe_bitmap *fb, int once_p)
 #endif /* not USE_CAIRO */
 #endif /* HAVE_X_WINDOWS */
 
+#ifdef HAVE_NTGUI
+      unsigned short *bits = fb->bits;
+      int j;
+      for (j = 0; j < fb->height; j++)
+	{
+	  unsigned short b = *bits;
+	  b <<= (16 - fb->width);
+	  /* Windows is little-endian, so the next line is always
+	     needed.  */
+	  b = ((b >> 8) | (b << 8));
+	  *bits++ = b;
+	}
+#endif
     }
 
   if (!once_p)

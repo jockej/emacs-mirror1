@@ -1,6 +1,6 @@
 /* Asynchronous subprocess control for GNU Emacs.
 
-Copyright (C) 1985-1988, 1993-1996, 1998-1999, 2001-2016 Free Software
+Copyright (C) 1985-1988, 1993-1996, 1998-1999, 2001-2017 Free Software
 Foundation, Inc.
 
 This file is part of GNU Emacs.
@@ -2049,7 +2049,16 @@ create_process (Lisp_Object process, char **new_argv, Lisp_Object current_dir)
   int volatile forkerr_volatile = forkerr;
   struct Lisp_Process *p_volatile = p;
 
+#ifdef DARWIN_OS
+  /* Darwin doesn't let us run setsid after a vfork, so use fork when
+     necessary. */
+  if (pty_flag)
+    pid = fork ();
+  else
+    pid = vfork ();
+#else
   pid = vfork ();
+#endif
 
   current_dir = current_dir_volatile;
   lisp_pty_name = lisp_pty_name_volatile;
@@ -3431,16 +3440,14 @@ connect_network_socket (Lisp_Object proc, Lisp_Object addrinfos,
 	  break;
 	}
 
-      immediate_quit = 1;
-      QUIT;
+      maybe_quit ();
 
       ret = connect (s, sa, addrlen);
       xerrno = errno;
 
       if (ret == 0 || xerrno == EISCONN)
 	{
-	  /* The unwind-protect will be discarded afterwards.
-	     Likewise for immediate_quit.  */
+	  /* The unwind-protect will be discarded afterwards.  */
 	  break;
 	}
 
@@ -3459,7 +3466,7 @@ connect_network_socket (Lisp_Object proc, Lisp_Object addrinfos,
 	retry_select:
 	  FD_ZERO (&fdset);
 	  FD_SET (s, &fdset);
-	  QUIT;
+	  maybe_quit ();
 	  sc = pselect (s + 1, NULL, &fdset, NULL, NULL, NULL);
 	  if (sc == -1)
 	    {
@@ -3480,8 +3487,6 @@ connect_network_socket (Lisp_Object proc, Lisp_Object addrinfos,
 	    report_file_errno ("Failed connect", Qnil, xerrno);
 	}
 #endif /* !WINDOWSNT */
-
-      immediate_quit = 0;
 
       /* Discard the unwind protect closing S.  */
       specpdl_ptr = specpdl + count;
@@ -3538,8 +3543,6 @@ connect_network_socket (Lisp_Object proc, Lisp_Object addrinfos,
 	}
 #endif
     }
-
-  immediate_quit = 0;
 
   if (s < 0)
     {
@@ -4012,8 +4015,7 @@ usage: (make-network-process &rest ARGS)  */)
       struct addrinfo *res, *lres;
       int ret;
 
-      immediate_quit = 1;
-      QUIT;
+      maybe_quit ();
 
       struct addrinfo hints;
       memset (&hints, 0, sizeof hints);
@@ -4034,7 +4036,6 @@ usage: (make-network-process &rest ARGS)  */)
 #else
 	error ("%s/%s getaddrinfo error %d", SSDATA (host), portstring, ret);
 #endif
-      immediate_quit = 0;
 
       for (lres = res; lres; lres = lres->ai_next)
 	addrinfos = Fcons (conv_addrinfo_to_lisp (lres), addrinfos);
@@ -4387,7 +4388,7 @@ network_interface_info (Lisp_Object ifname)
 
       for (it = ifap; it != NULL; it = it->ifa_next)
         {
-          struct sockaddr_dl *sdl = (struct sockaddr_dl*) it->ifa_addr;
+          struct sockaddr_dl *sdl = (struct sockaddr_dl *) it->ifa_addr;
           unsigned char linkaddr[6];
           int n;
 
@@ -4571,8 +4572,16 @@ is nil, from any process) before the timeout expired.  */)
       /* Can't wait for a process that is dedicated to a different
 	 thread.  */
       if (!EQ (proc->thread, Qnil) && !EQ (proc->thread, Fcurrent_thread ()))
-	error ("Attempt to accept output from process %s locked to thread %s",
-	       SDATA (proc->name), SDATA (XTHREAD (proc->thread)->name));
+	{
+	  Lisp_Object proc_thread_name = XTHREAD (proc->thread)->name;
+
+	  if (STRINGP (proc_thread_name))
+	    error ("Attempt to accept output from process %s locked to thread %s",
+		   SDATA (proc->name), SDATA (proc_thread_name));
+	  else
+	    error ("Attempt to accept output from process %s locked to thread %p",
+		   SDATA (proc->name), XTHREAD (proc->thread));
+	}
     }
   else
     just_this_one = Qnil;
@@ -5020,7 +5029,7 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
 	 since we want to return C-g as an input character.
 	 Otherwise, do pending quit if requested.  */
       if (read_kbd >= 0)
-	QUIT;
+	maybe_quit ();
       else if (pending_signals)
 	process_pending_signals ();
 
@@ -5341,18 +5350,23 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
 	    }
 #endif
 
+/* Non-macOS HAVE_GLIB builds call thread_select in xgselect.c.  */
+#if defined HAVE_GLIB && !defined HAVE_NS
+	  nfds = xg_select (max_desc + 1,
+			    &Available, (check_write ? &Writeok : 0),
+			    NULL, &timeout, NULL);
+#else  /* !HAVE_GLIB */
 	  nfds = thread_select (
-#if defined (HAVE_NS)
+# ifdef HAVE_NS
 				ns_select
-#elif defined (HAVE_GLIB)
-				xg_select
-#else
+# else
 				pselect
-#endif
+# endif
 				, max_desc + 1,
 				&Available,
 				(check_write ? &Writeok : 0),
 				NULL, &timeout, NULL);
+#endif	/* !HAVE_GLIB */
 
 #ifdef HAVE_GNUTLS
           /* GnuTLS buffers data internally.  In lowat mode it leaves
@@ -5743,7 +5757,7 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
     {
       /* Prevent input_pending from remaining set if we quit.  */
       clear_input_pending ();
-      QUIT;
+      maybe_quit ();
     }
 
   return got_some_output;
@@ -7481,7 +7495,7 @@ wait_reading_process_output (intmax_t time_limit, int nsecs, int read_kbd,
 	 since we want to return C-g as an input character.
 	 Otherwise, do pending quit if requested.  */
       if (read_kbd >= 0)
-	QUIT;
+	maybe_quit ();
 
       /* Exit now if the cell we're waiting for became non-nil.  */
       if (! NILP (wait_for_cell) && ! NILP (XCAR (wait_for_cell)))

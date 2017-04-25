@@ -1,6 +1,6 @@
 ;;; data-tests.el --- tests for src/data.c
 
-;; Copyright (C) 2013-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2013-2017 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -29,6 +29,8 @@
   (should (= 1))
   (should (= 2 2))
   (should (= 9 9 9 9 9 9 9 9 9))
+  (should (= most-negative-fixnum (float most-negative-fixnum)))
+  (should-not (= most-positive-fixnum (+ 1.0 most-positive-fixnum)))
   (should-not (apply #'= '(3 8 3)))
   (should-error (= 9 9 'foo))
   ;; Short circuits before getting to bad arg
@@ -39,6 +41,7 @@
   (should (< 1))
   (should (< 2 3))
   (should (< -6 -1 0 2 3 4 8 9 999))
+  (should (< 0.5 most-positive-fixnum (+ 1.0 most-positive-fixnum)))
   (should-not (apply #'< '(3 8 3)))
   (should-error (< 9 10 'foo))
   ;; Short circuits before getting to bad arg
@@ -49,6 +52,7 @@
   (should (> 1))
   (should (> 3 2))
   (should (> 6 1 0 -2 -3 -4 -8 -9 -999))
+  (should (> (+ 1.0 most-positive-fixnum) most-positive-fixnum 0.5))
   (should-not (apply #'> '(3 8 3)))
   (should-error (> 9 8 'foo))
   ;; Short circuits before getting to bad arg
@@ -59,6 +63,7 @@
   (should (<= 1))
   (should (<= 2 3))
   (should (<= -6 -1 -1 0 0 0 2 3 4 8 999))
+  (should (<= 0.5 most-positive-fixnum (+ 1.0 most-positive-fixnum)))
   (should-not (apply #'<= '(3 8 3 3)))
   (should-error (<= 9 10 'foo))
   ;; Short circuits before getting to bad arg
@@ -69,10 +74,35 @@
   (should (>= 1))
   (should (>= 3 2))
   (should (>= 666 1 0 0 -2 -3 -3 -3 -4 -8 -8 -9 -999))
+  (should (>= (+ 1.0 most-positive-fixnum) most-positive-fixnum))
   (should-not (apply #'>= '(3 8 3)))
   (should-error (>= 9 8 'foo))
   ;; Short circuits before getting to bad arg
   (should-not (>= 8 9 'foo)))
+
+(ert-deftest data-tests-max ()
+  (should-error (max))
+  (should (= 1 (max 1)))
+  (should (= 3 (max 3 2)))
+  (should (= 666 (max 666 1 0 0 -2 -3 -3 -3 -4 -8 -8 -9 -999)))
+  (should (= (1+ most-negative-fixnum)
+             (max (float most-negative-fixnum) (1+ most-negative-fixnum))))
+  (should (= 8 (apply #'max '(3 8 3))))
+  (should-error (max 9 8 'foo))
+  (should-error (max (make-marker)))
+  (should (eql 1 (max (point-min-marker) 1))))
+
+(ert-deftest data-tests-min ()
+  (should-error (min))
+  (should (= 1 (min 1)))
+  (should (= 2 (min 3 2)))
+  (should (= -999 (min 666 1 0 0 -2 -3 -3 -3 -4 -8 -8 -9 -999)))
+  (should (= most-positive-fixnum
+             (min (+ 1.0 most-positive-fixnum) most-positive-fixnum)))
+  (should (= 3 (apply #'min '(3 8 3))))
+  (should-error (min 9 8 'foo))
+  (should-error (min (make-marker)))
+  (should (eql 1 (min (point-min-marker) 1))))
 
 ;; Bool vector tests.  Compactly represent bool vectors as hex
 ;; strings.

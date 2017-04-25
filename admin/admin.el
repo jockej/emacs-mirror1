@@ -1,6 +1,6 @@
 ;;; admin.el --- utilities for Emacs administration
 
-;; Copyright (C) 2001-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2017 Free Software Foundation, Inc.
 
 ;; This file is part of GNU Emacs.
 
@@ -93,9 +93,7 @@ Optional argument DATE is the release date, default today."
 Root must be the root of an Emacs source tree."
   (interactive (list
 		(read-directory-name "Emacs root directory: " source-directory)
-		(read-string "Version number: "
-			     (replace-regexp-in-string "\\.[0-9]+\\'" ""
-						       emacs-version))))
+		(read-string "Version number: " emacs-version)))
   (unless (file-exists-p (expand-file-name "src/emacs.c" root))
     (user-error "%s doesn't seem to be the root of an Emacs source tree" root))
   (message "Setting version numbers...")
@@ -143,6 +141,13 @@ Root must be the root of an Emacs source tree."
                          (not (equal (cadr oldversion) (cadr newversion)))))
          (newsfile (expand-file-name "etc/NEWS" root))
          (oldnewsfile (expand-file-name (format "etc/NEWS.%s" oldmajor) root)))
+    (unless (> (length newversion) 2)   ; pretest or release candidate?
+      (with-temp-buffer
+        (insert-file-contents newsfile)
+        (if (re-search-forward "^\\(+++ *\\|--- *\\)$" nil t)
+            (display-warning 'admin
+                             "NEWS file still contains temporary markup.
+Documentation changes might not have been completed!"))))
     (when (and majorbump
                (not (file-exists-p oldnewsfile)))
       (rename-file newsfile oldnewsfile)

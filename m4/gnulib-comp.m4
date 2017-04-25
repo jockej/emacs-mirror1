@@ -1,5 +1,5 @@
 # DO NOT EDIT! GENERATED AUTOMATICALLY!
-# Copyright (C) 2002-2016 Free Software Foundation, Inc.
+# Copyright (C) 2002-2017 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -54,6 +54,7 @@ AC_DEFUN([gl_EARLY],
   # Code from module careadlinkat:
   # Code from module clock-time:
   # Code from module close-stream:
+  # Code from module count-leading-zeros:
   # Code from module count-one-bits:
   # Code from module count-trailing-zeros:
   # Code from module crypto/md5:
@@ -190,6 +191,7 @@ AC_DEFUN([gl_INIT],
   gl_CLOCK_TIME
   gl_CLOSE_STREAM
   gl_MODULE_INDICATOR([close-stream])
+  gl_COUNT_LEADING_ZEROS
   gl_COUNT_ONE_BITS
   gl_COUNT_TRAILING_ZEROS
   gl_MD5
@@ -257,20 +259,10 @@ AC_DEFUN([gl_INIT],
   fi
   gl_STDLIB_MODULE_INDICATOR([getloadavg])
   gl_FUNC_GETOPT_GNU
-  if test $REPLACE_GETOPT = 1; then
-    AC_LIBOBJ([getopt])
-    AC_LIBOBJ([getopt1])
-    gl_PREREQ_GETOPT
-    dnl Arrange for unistd.h to include getopt.h.
-    GNULIB_GL_UNISTD_H_GETOPT=1
-  fi
-  AC_SUBST([GNULIB_GL_UNISTD_H_GETOPT])
-  gl_MODULE_INDICATOR_FOR_TESTS([getopt-gnu])
   gl_FUNC_GETOPT_POSIX
   if test $REPLACE_GETOPT = 1; then
     AC_LIBOBJ([getopt])
     AC_LIBOBJ([getopt1])
-    gl_PREREQ_GETOPT
     dnl Arrange for unistd.h to include getopt.h.
     GNULIB_GL_UNISTD_H_GETOPT=1
   fi
@@ -846,11 +838,8 @@ AC_DEFUN([gltests_LIBSOURCES], [
 # gnulib-tool and may be removed by future gnulib-tool invocations.
 AC_DEFUN([gl_FILE_LIST], [
   build-aux/gitlog-to-changelog
-  build-aux/snippet/_Noreturn.h
-  build-aux/snippet/arg-nonnull.h
-  build-aux/snippet/c++defs.h
-  build-aux/snippet/warn-on-use.h
   build-aux/update-copyright
+  lib/_Noreturn.h
   lib/acl-errno-valid.c
   lib/acl-internal.c
   lib/acl-internal.h
@@ -859,10 +848,12 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/alloca.in.h
   lib/allocator.c
   lib/allocator.h
+  lib/arg-nonnull.h
   lib/at-func.c
   lib/binary-io.c
   lib/binary-io.h
   lib/byteswap.in.h
+  lib/c++defs.h
   lib/c-ctype.c
   lib/c-ctype.h
   lib/c-strcase.h
@@ -872,6 +863,8 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/careadlinkat.h
   lib/close-stream.c
   lib/close-stream.h
+  lib/count-leading-zeros.c
+  lib/count-leading-zeros.h
   lib/count-one-bits.c
   lib/count-one-bits.h
   lib/count-trailing-zeros.c
@@ -906,6 +899,11 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/getdtablesize.c
   lib/getgroups.c
   lib/getloadavg.c
+  lib/getopt-cdefs.in.h
+  lib/getopt-core.h
+  lib/getopt-ext.h
+  lib/getopt-pfx-core.h
+  lib/getopt-pfx-ext.h
   lib/getopt.c
   lib/getopt.in.h
   lib/getopt1.c
@@ -992,6 +990,7 @@ AC_DEFUN([gl_FILE_LIST], [
   lib/utimens.h
   lib/verify.h
   lib/vla.h
+  lib/warn-on-use.h
   lib/xalloc-oversized.h
   m4/00gnulib.m4
   m4/absolute-header.m4
@@ -1001,6 +1000,7 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/c-strtod.m4
   m4/clock_time.m4
   m4/close-stream.m4
+  m4/count-leading-zeros.m4
   m4/count-one-bits.m4
   m4/count-trailing-zeros.m4
   m4/dirent_h.m4
@@ -1099,4 +1099,5 @@ AC_DEFUN([gl_FILE_LIST], [
   m4/warn-on-use.m4
   m4/warnings.m4
   m4/wchar_t.m4
+  m4/wint_t.m4
 ])

@@ -1,5 +1,5 @@
 /* font.h -- Interface definition for font handling.
-   Copyright (C) 2006-2016 Free Software Foundation, Inc.
+   Copyright (C) 2006-2017 Free Software Foundation, Inc.
    Copyright (C) 2006, 2007, 2008, 2009, 2010, 2011
      National Institute of Advanced Industrial Science and Technology (AIST)
      Registration Number H13PRO009
@@ -424,7 +424,7 @@ FONTP (Lisp_Object x)
 INLINE bool
 FONT_SPEC_P (Lisp_Object x)
 {
-  return FONTP (x) && (ASIZE (x) & PSEUDOVECTOR_SIZE_MASK) == FONT_SPEC_MAX;
+  return FONTP (x) && PVSIZE (x) == FONT_SPEC_MAX;
 }
 
 /* Like FONT_SPEC_P, but can be used in the garbage collector.  */
@@ -438,7 +438,7 @@ GC_FONT_SPEC_P (Lisp_Object x)
 INLINE bool
 FONT_ENTITY_P (Lisp_Object x)
 {
-  return FONTP (x) && (ASIZE (x) & PSEUDOVECTOR_SIZE_MASK) == FONT_ENTITY_MAX;
+  return FONTP (x) && PVSIZE (x) == FONT_ENTITY_MAX;
 }
 
 /* Like FONT_ENTITY_P, but can be used in the garbage collector.  */
@@ -452,7 +452,7 @@ GC_FONT_ENTITY_P (Lisp_Object x)
 INLINE bool
 FONT_OBJECT_P (Lisp_Object x)
 {
-  return FONTP (x) && (ASIZE (x) & PSEUDOVECTOR_SIZE_MASK) == FONT_OBJECT_MAX;
+  return FONTP (x) && PVSIZE (x) == FONT_OBJECT_MAX;
 }
 
 /* Like FONT_OBJECT_P, but can be used in the garbage collector.  */

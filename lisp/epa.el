@@ -1,6 +1,6 @@
 ;;; epa.el --- the EasyPG Assistant -*- lexical-binding: t -*-
 
-;; Copyright (C) 2006-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2006-2017 Free Software Foundation, Inc.
 
 ;; Author: Daiki Ueno <ueno@unixuser.org>
 ;; Keywords: PGP, GnuPG
@@ -628,7 +628,7 @@ If SECRET is non-nil, list secret keys instead of public keys."
 		       (`import-keys "Error while importing keys with \"%s\":")
 		       (`export-keys "Error while exporting keys with \"%s\":")
 		       (_ "Error while executing \"%s\":\n\n"))
-		     epg-gpg-program)
+		     (epg-context-program context))
 		    "\n\n"
 		    (epg-context-error-output context)))
 	  (epa-info-mode)

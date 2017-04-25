@@ -1,6 +1,6 @@
 ;;; ob-C.el --- org-babel functions for C and similar languages
 
-;; Copyright (C) 2010-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2010-2017 Free Software Foundation, Inc.
 
 ;; Author: Eric Schulte
 ;; Keywords: literate programming, reproducible research
@@ -157,12 +157,12 @@ it's header arguments."
 (defun org-babel-prep-session:C (session params)
   "This function does nothing as C is a compiled language with no
 support for sessions"
-  (error "C is a compiled languages -- no support for sessions"))
+  (error "C is a compiled language -- no support for sessions"))
 
 (defun org-babel-load-session:C (session body params)
   "This function does nothing as C is a compiled language with no
 support for sessions"
-  (error "C is a compiled languages -- no support for sessions"))
+  (error "C is a compiled language -- no support for sessions"))
 
 ;; helper functions
 

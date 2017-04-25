@@ -1,6 +1,6 @@
 ;;; abbrev.el --- abbrev mode commands for Emacs -*- lexical-binding: t -*-
 
-;; Copyright (C) 1985-1987, 1992, 2001-2016 Free Software Foundation,
+;; Copyright (C) 1985-1987, 1992, 2001-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Maintainer: emacs-devel@gnu.org
@@ -720,9 +720,10 @@ then ABBREV is looked up in that table only."
           (setq start abbrev-start-location)
           (setq abbrev-start-location nil)
           ;; Remove the hyphen inserted by `abbrev-prefix-mark'.
-          (if (and (< start (point-max))
-                   (eq (char-after start) ?-))
-              (delete-region start (1+ start)))
+          (when (and (< start (point-max))
+                     (eq (char-after start) ?-))
+            (delete-region start (1+ start))
+            (setq pos (1- pos)))
           (skip-syntax-backward " ")
           (setq end (point))
           (when (> end start)
@@ -979,10 +980,10 @@ Properties with special meaning:
   ;; We used to manually add the docstring, but we also want to record this
   ;; location as the definition of the variable (in load-history), so we may
   ;; as well just use `defvar'.
-  (if (and docstring props (symbolp docstring))
-      ;; There is really no docstring, instead the docstring arg
-      ;; is a property name.
-      (push docstring props) (setq docstring nil))
+  (when (and docstring props (symbolp docstring))
+    ;; There is really no docstring, instead the docstring arg
+    ;; is a property name.
+    (push docstring props) (setq docstring nil))
   (eval `(defvar ,tablename nil ,@(if docstring (list docstring))))
   (let ((table (if (boundp tablename) (symbol-value tablename))))
     (unless table

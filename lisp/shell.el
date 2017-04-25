@@ -1,6 +1,6 @@
 ;;; shell.el --- specialized comint.el for running the shell -*- lexical-binding: t -*-
 
-;; Copyright (C) 1988, 1993-1997, 2000-2016 Free Software Foundation,
+;; Copyright (C) 1988, 1993-1997, 2000-2017 Free Software Foundation,
 ;; Inc.
 
 ;; Author: Olin Shivers <shivers@cs.cmu.edu>
@@ -544,11 +544,14 @@ control whether input and output cause the window to scroll to the end of the
 buffer."
   (setq comint-prompt-regexp shell-prompt-pattern)
   (shell-completion-vars)
-  (set (make-local-variable 'paragraph-separate) "\\'")
-  (set (make-local-variable 'paragraph-start) comint-prompt-regexp)
-  (set (make-local-variable 'font-lock-defaults) '(shell-font-lock-keywords t))
-  (set (make-local-variable 'shell-dirstack) nil)
-  (set (make-local-variable 'shell-last-dir) nil)
+  (setq-local paragraph-separate "\\'")
+  (setq-local paragraph-start comint-prompt-regexp)
+  (setq-local font-lock-defaults '(shell-font-lock-keywords t))
+  (setq-local shell-dirstack nil)
+  (setq-local shell-last-dir nil)
+  ;; People expect Shell mode to keep the last line of output at
+  ;; window bottom.
+  (setq-local scroll-conservatively 101)
   (shell-dirtrack-mode 1)
 
   ;; By default, ansi-color applies faces using overlays.  This is
@@ -708,35 +711,43 @@ Otherwise, one argument `-i' is passed to the shell.
                  ;; If the current buffer is a dead shell buffer, use it.
                  (current-buffer)))
 
-  ;; On remote hosts, the local `shell-file-name' might be useless.
-  (if (and (called-interactively-p 'any)
-	   (file-remote-p default-directory)
-	   (null explicit-shell-file-name)
-	   (null (getenv "ESHELL")))
-      (with-current-buffer buffer
-	(set (make-local-variable 'explicit-shell-file-name)
-             (expand-file-name
-              (file-local-name
-	       (read-file-name
-		"Remote shell path: " default-directory shell-file-name
-		t shell-file-name))))))
+  (with-current-buffer buffer
+    (when (file-remote-p default-directory)
+      ;; Apply connection-local variables.
+      (hack-connection-local-variables-apply
+       `(:application tramp
+         :protocol ,(file-remote-p default-directory 'method)
+         :user ,(file-remote-p default-directory 'user)
+         :machine ,(file-remote-p default-directory 'host)))
 
-  ;; The buffer's window must be correctly set when we call comint (so
-  ;; that comint sets the COLUMNS env var properly).
+      ;; On remote hosts, the local `shell-file-name' might be useless.
+      (if (and (called-interactively-p 'any)
+               (null explicit-shell-file-name)
+               (null (getenv "ESHELL")))
+          (set (make-local-variable 'explicit-shell-file-name)
+               (expand-file-name
+                (file-local-name
+                 (read-file-name
+                  "Remote shell path: " default-directory shell-file-name
+                  t shell-file-name)))))))
+
+  ;; The buffer's window must be correctly set when we call comint
+  ;; (so that comint sets the COLUMNS env var properly).
   (pop-to-buffer buffer)
+  ;; Rain or shine, BUFFER must be current by now.
   (unless (comint-check-proc buffer)
     (let* ((prog (or explicit-shell-file-name
-		     (getenv "ESHELL") shell-file-name))
-	   (name (file-name-nondirectory prog))
-	   (startfile (concat "~/.emacs_" name))
-	   (xargs-name (intern-soft (concat "explicit-" name "-args"))))
+                     (getenv "ESHELL") shell-file-name))
+           (name (file-name-nondirectory prog))
+           (startfile (concat "~/.emacs_" name))
+           (xargs-name (intern-soft (concat "explicit-" name "-args"))))
       (unless (file-exists-p startfile)
-	(setq startfile (concat user-emacs-directory "init_" name ".sh")))
+        (setq startfile (concat user-emacs-directory "init_" name ".sh")))
       (apply 'make-comint-in-buffer "shell" buffer prog
-	     (if (file-exists-p startfile) startfile)
-	     (if (and xargs-name (boundp xargs-name))
-		 (symbol-value xargs-name)
-	       '("-i")))
+             (if (file-exists-p startfile) startfile)
+             (if (and xargs-name (boundp xargs-name))
+                 (symbol-value xargs-name)
+               '("-i")))
       (shell-mode)))
   buffer)
 

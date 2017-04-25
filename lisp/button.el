@@ -1,6 +1,6 @@
 ;;; button.el --- clickable buttons
 ;;
-;; Copyright (C) 2001-2016 Free Software Foundation, Inc.
+;; Copyright (C) 2001-2017 Free Software Foundation, Inc.
 ;;
 ;; Author: Miles Bader <miles@gnu.org>
 ;; Keywords: extensions
@@ -493,7 +493,7 @@ Returns the button found."
 	    (unless (button-get button 'skip)
 	      (setq n (1- n)))))))
     (if (null button)
-	(error (if wrap "No buttons!" "No more buttons"))
+	(user-error (if wrap "No buttons!" "No more buttons"))
       (let ((msg (and display-message (button-get button 'help-echo))))
 	(when msg
 	  (message "%s" msg)))
